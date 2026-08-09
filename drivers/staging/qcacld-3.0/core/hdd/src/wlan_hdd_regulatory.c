@@ -896,14 +896,9 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 
 	switch (request->initiator) {
 	case NL80211_REGDOM_SET_BY_USER:
-
-		if (request->user_reg_hint_type !=
-		    NL80211_USER_REG_HINT_CELL_BASE)
-			return;
-
 		qdf_mem_copy(country, request->alpha2, QDF_MIN(
 			     sizeof(request->alpha2), sizeof(country)));
-		status = ucfg_reg_set_country(hdd_ctx->pdev, country);
+		status = ucfg_reg_set_country(hdd_ctx->pdev, (uint8_t *)country);
 		break;
 	case NL80211_REGDOM_SET_BY_CORE:
 	case NL80211_REGDOM_SET_BY_COUNTRY_IE:
@@ -917,7 +912,7 @@ void hdd_reg_notifier(struct wiphy *wiphy,
 }
 #else
 void hdd_reg_notifier(struct wiphy *wiphy,
-		      struct regulatory_request *request)
+			      struct regulatory_request *request)
 {
 	struct hdd_context *hdd_ctx = wiphy_priv(wiphy);
 	bool reset = false;

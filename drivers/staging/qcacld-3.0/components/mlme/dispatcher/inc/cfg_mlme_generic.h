@@ -135,7 +135,7 @@
  */
 #define CFG_11D_SUPPORT_ENABLED CFG_INI_BOOL( \
 		"g11dSupportEnabled", \
-		1, \
+		0, \
 		"11d Enable Flag")
 
 /*
