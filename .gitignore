@@ -120,6 +120,9 @@ ID
 #
 # Leavings from module signing
 #
+# Build output
+out/
+
 extra_certificates
 signing_key.pem
 signing_key.priv
