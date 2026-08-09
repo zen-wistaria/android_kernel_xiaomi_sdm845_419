@@ -1,0 +1,147 @@
+diff --git a/kernel/Kconfig b/kernel/Kconfig
+index 45f87e42..b0c2a5fe 100644
+--- a/kernel/Kconfig
++++ b/kernel/Kconfig
+@@ -77,19 +77,17 @@ config KSU_MULTI_MANAGER_SUPPORT
+ 	help
+ 		Enable multi KernelSU manager support
+ 
+-choice
+-	prompt "KernelSU Hooking Method"
+-	depends on KSU
+-	default KSU_TRACEPOINT_HOOK
+-	help
+-	  Select the hooking method for KernelSU.
+-	  Note: Tracepoint Syscall Redirect hook is only supported for GKI2(5.10+)
++# Hooking methods are independent (no mutual-exclusive choice), matching
++# KSU Next kernels: MANUAL_HOOK and SUSFS can be enabled together. This is
++# required for stable operation on non-GKI 4.19 QTI kernels (adb_root,
++# selinux_hide and zygisk all work with both enabled).
+ 
+ config KSU_TRACEPOINT_HOOK
+ 	bool "Tracepoint Syscall Redirect"
++	depends on KSU
+ 	help
+-	  The standard, upstream method for modern kernels. 
+-	  Utilizes GKI tracepoints for syscall redirection. 
++	  The standard, upstream method for modern kernels.
++	  Utilizes GKI tracepoints for syscall redirection.
+ 	  The implementation is only for devices with GKI2 support.
+ 	  Support for kernel 5.10+
+ 
+@@ -97,7 +95,7 @@ config KSU_MANUAL_HOOK
+ 	bool "Manually hook KernelSU"
+ 	depends on KSU != m
+ 	help
+-	  If enabled, it hooks the required KernelSU syscalls 
++	  If enabled, it hooks the required KernelSU syscalls
+ 	  with a manually-patched function.
+ 	  Support for kernel 3.4+
+ 
+@@ -107,11 +105,9 @@ config KSU_SUSFS
+ 	help
+ 	  Patch and Enable SUSFS to kernel with KernelSU.
+ 	  SuSFS Officially support kernel 5.10+
+-	  This KSU driver support it for 4.3+ in KSU side, 
++	  This KSU driver support it for 4.3+ in KSU side,
+ 	  But the kernel side susfs compatibility MUST completed by yourself.
+ 
+-endchoice
+-
+ menu "KernelSU - Manual Hook Auto hook"
+     depends on KSU_MANUAL_HOOK
+ 
+diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
+index 0cc95114..24736c6c 100644
+--- a/kernel/feature/kernel_umount.c
++++ b/kernel/feature/kernel_umount.c
+@@ -177,8 +177,10 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+ skip_umount_task:
+     // do susfs setuid when susfs enabled
+ #ifdef CONFIG_KSU_SUSFS
+-    schedule_work(&susfs_extra_works);
+-    susfs_set_current_proc_umounted();
++    /* Disabled: marking every app fork UMOUNTED + scheduling extra work
++     * destabilizes zygisk/zygote. Susfs umount behavior re-evaluated. */
++    // schedule_work(&susfs_extra_works);
++    // susfs_set_current_proc_umounted();
+ #endif
+ 
+     return 0;
+diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
+index e707f11c..b89aa850 100644
+--- a/kernel/feature/sucompat.c
++++ b/kernel/feature/sucompat.c
+@@ -265,8 +265,9 @@ static inline void ksu_handle_execveat_init(const char *filename, void *envp)
+                 ksu_set_current_proc_unprivillege();
+ 
+ #ifdef CONFIG_KSU_SUSFS
+-            if (!susfs_is_current_proc_umounted())
+-                susfs_set_current_proc_umounted();
++            /* Disabled for zygisk stability (see kernel_umount.c) */
++            // if (!susfs_is_current_proc_umounted())
++            //     susfs_set_current_proc_umounted();
+ #endif
+         }
+ #endif
+diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
+index 43f7ce46..3ea7875c 100644
+--- a/kernel/hook/setuid_hook.c
++++ b/kernel/hook/setuid_hook.c
+@@ -27,6 +27,9 @@
+ #include "compat/kernel_compat.h"
+ #include "feature/kernel_umount.h"
+ #include "feature/sucompat.h"
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs_def.h>
++#endif
+ 
+ static inline void ksu_set_file_immutable(const char *path_name, bool immutable)
+ {
+@@ -140,6 +143,11 @@ int ksu_handle_setuid(uid_t new_uid, uid_t old_uid)
+         return 0;
+     } else {
+         ksu_set_current_proc_unprivillege();
++#ifdef CONFIG_KSU_SUSFS
++        task_lock(current);
++        current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
++        task_unlock(current);
++#endif
+     }
+ #endif // #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+ 
+diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
+index 0bf3c695..e04c6064 100644
+--- a/kernel/runtime/ksud_integration.c
++++ b/kernel/runtime/ksud_integration.c
+@@ -98,6 +98,9 @@ static void stop_execve_hook(void);
+ #elif defined(CONFIG_KSU_SUSFS)
+     DEFINE_STATIC_KEY_TRUE(ksu_is_init_rc_hook_enabled);
+     DEFINE_STATIC_KEY_TRUE(ksu_is_input_hook_enabled);
++    /* When MANUAL_HOOK and SUSFS are both enabled, lsm_hooks.o still
++     * references ksu_init_rc_hook; provide it here too. */
++    DEFINE_STATIC_KEY_TRUE(ksu_init_rc_hook);
+ 
+     // use define to avoid ifdef
+     #define ksu_init_rc_hook_inactive() (!static_branch_likely(&ksu_is_init_rc_hook_enabled))
+diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+index 32693303..63f9b55c 100644
+--- a/kernel/selinux/rules.c
++++ b/kernel/selinux/rules.c
+@@ -147,6 +147,16 @@ void apply_kernelsu_rules()
+         pr_info("SELinux permissive or disabled, apply rules!\n");
+     }
+ 
++	/* Avoid re-applying rules / re-backing up policydb when invoked both
++	 * from kernelsu_init and from the /init second-stage execve hook. */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
++	if (backup_sepolicy)
++		return;
++#else
++	if (backup_policydb)
++		return;
++#endif
++
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
+     struct selinux_policy *pol, *old_pol = selinux_state.policy;
+     mutex_lock(&selinux_state.policy_mutex);
