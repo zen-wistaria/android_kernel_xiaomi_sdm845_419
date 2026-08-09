@@ -22,6 +22,9 @@ find techpack -name Kbuild -o -name Makefile | xargs grep -l -- "-Werror" 2>/dev
 # ==== Compile ====
 export LD_LIBRARY_PATH="$TC/lib:$LD_LIBRARY_PATH"
 
+# KSU compat: 4.19 QTI exposes selinux_state struct (not the legacy global
+# policydb). Passed via KCFLAGS so the ReSukiSU submodule stays pristine and
+# KSU_COMMIT_SHA does not turn -dirty from a patched Kbuild.
 make -j$(nproc) O=out \
   ARCH=arm64 \
   CC="$TC/bin/clang" \
@@ -33,4 +36,5 @@ make -j$(nproc) O=out \
   OBJCOPY="$TC/bin/llvm-objcopy" \
   OBJDUMP="$TC/bin/llvm-objdump" \
   STRIP="$TC/bin/llvm-strip" \
-  LLVM_IAS=1
+  LLVM_IAS=1 \
+  KCFLAGS=-DKSU_COMPAT_HAS_SELINUX_STATE
