@@ -7,16 +7,20 @@ export SUBARCH=arm64
 
 TC="$HOME/Coding/proton-clang"
 
-# ==== Apply KernelSU backports patch (submodule stays pristine) ====
-# These are kernel-side changes that live in the repo (not the ReSukiSU
-# submodule): Kconfig (manual+susfs), selinux_hide early backup, sus_path
-# app-flag, rules idempotence. Applied BEFORE defconfig so Kconfig edits take
-# effect during olddefconfig.
-if grep -q "Hooking methods are independent" KernelSU/kernel/Kconfig 2>/dev/null; then
-	echo "[build] KernelSU-backports.patch already applied"
+# ==== Apply + commit KernelSU backports patch ====
+# Backports (Kconfig independent hooks, sus_path app-flag, ksu_init_rc_hook)
+# are applied to the ReSukiSU submodule and committed with a recognizable
+# name so changes stay visible in `git log KernelSU`. Idempotent: skips if the
+# commit already exists.
+KSU_BACKPORT_COMMIT="ReSukiSU backports: independent hooks, sus_path app-flag, ksu_init_rc_hook"
+if git -C KernelSU log --oneline | grep -q "ReSukiSU backports:"; then
+	echo "[build] KernelSU backports already committed"
 else
+	git -C KernelSU checkout -- kernel/ 2>/dev/null
 	(cd KernelSU && git apply ../KernelSU-backports.patch)
-	echo "[build] Applied KernelSU-backports.patch"
+	git -C KernelSU add -A
+	git -C KernelSU commit -m "$KSU_BACKPORT_COMMIT"
+	echo "[build] Committed KernelSU backports"
 fi
 
 # ==== Merge defconfig ====
