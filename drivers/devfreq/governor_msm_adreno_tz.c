@@ -362,6 +362,57 @@ static inline int devfreq_get_freq_level(struct devfreq *devfreq,
 	return -EINVAL;
 }
 
+/* Sultan-style simple GPU boost (Faux123 simple governor) */
+static int simple_laziness = 4;
+module_param_named(simple_laziness, simple_laziness, int, 0664);
+
+static int ramp_up_threshold = 9000;
+module_param_named(simple_ramp_threshold, ramp_up_threshold, int, 0664);
+
+int simple_gpu_active = 1;
+module_param_named(simple_gpu_activate, simple_gpu_active, int, 0664);
+
+static int laziness = 4;
+
+int simple_gpu_algorithm(int level, int *val,
+			struct devfreq_msm_adreno_tz_data *priv)
+{
+	int ret;
+
+	/* it's currently busy */
+	if (priv->bin.busy_time > ramp_up_threshold) {
+		if (level == 0) {
+			ret = 0; /* already maxed, so do nothing */
+		} else if ((level > 0) &&
+			(level <= (priv->bus.num - 1))) {
+			ret = -1; /* bump up to next pwrlevel */
+		}
+	/* idle case */
+	} else {
+		if ((level >= 0) &&
+			(level < (priv->bus.num - 1))) {
+			if (laziness > 0) {
+				/* hold off for a while */
+				laziness--;
+				/* don't change anything yet */
+				ret = 0;
+			} else {
+				/* above min, lower it */
+				ret = 1;
+				/* reset laziness count */
+				laziness = simple_laziness;
+			}
+		} else if (level == (priv->bus.num - 1)) {
+			/* already @ min, so do nothing */
+			ret = 0;
+		}
+	}
+	*val = ret;
+
+	return ret;
+}
+EXPORT_SYMBOL(simple_gpu_algorithm);
+
 static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 {
 	int result = 0;
@@ -412,6 +463,8 @@ static int tz_get_target_freq(struct devfreq *devfreq, unsigned long *freq)
 	if (!priv->disable_busy_time_burst &&
 			priv->bin.busy_time > CEILING) {
 		val = -1 * level;
+	} else if (simple_gpu_active) {
+		simple_gpu_algorithm(level, &val, priv);
 	} else {
 
 		scm_data[0] = level;
