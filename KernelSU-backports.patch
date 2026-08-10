@@ -51,39 +51,39 @@ index 45f87e42..b0c2a5fe 100644
  menu "KernelSU - Manual Hook Auto hook"
      depends on KSU_MANUAL_HOOK
  
-diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
-index 0cc95114..24736c6c 100644
---- a/kernel/feature/kernel_umount.c
-+++ b/kernel/feature/kernel_umount.c
-@@ -177,8 +177,10 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
- skip_umount_task:
-     // do susfs setuid when susfs enabled
- #ifdef CONFIG_KSU_SUSFS
--    schedule_work(&susfs_extra_works);
--    susfs_set_current_proc_umounted();
-+    /* Disabled: marking every app fork UMOUNTED + scheduling extra work
-+     * destabilizes zygisk/zygote. Susfs umount behavior re-evaluated. */
-+    // schedule_work(&susfs_extra_works);
-+    // susfs_set_current_proc_umounted();
- #endif
+# diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
+# index 0cc95114..24736c6c 100644
+# --- a/kernel/feature/kernel_umount.c
+# +++ b/kernel/feature/kernel_umount.c
+# @@ -177,8 +177,10 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
+#  skip_umount_task:
+#      // do susfs setuid when susfs enabled
+#  #ifdef CONFIG_KSU_SUSFS
+# -    schedule_work(&susfs_extra_works);
+# -    susfs_set_current_proc_umounted();
+# +    /* Disabled: marking every app fork UMOUNTED + scheduling extra work
+# +     * destabilizes zygisk/zygote. Susfs umount behavior re-evaluated. */
+# +    // schedule_work(&susfs_extra_works);
+# +    // susfs_set_current_proc_umounted();
+#  #endif
  
-     return 0;
-diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-index e707f11c..b89aa850 100644
---- a/kernel/feature/sucompat.c
-+++ b/kernel/feature/sucompat.c
-@@ -265,8 +265,9 @@ static inline void ksu_handle_execveat_init(const char *filename, void *envp)
-                 ksu_set_current_proc_unprivillege();
+#      return 0;
+# diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
+# index e707f11c..b89aa850 100644
+# --- a/kernel/feature/sucompat.c
+# +++ b/kernel/feature/sucompat.c
+# @@ -265,8 +265,9 @@ static inline void ksu_handle_execveat_init(const char *filename, void *envp)
+#                  ksu_set_current_proc_unprivillege();
  
- #ifdef CONFIG_KSU_SUSFS
--            if (!susfs_is_current_proc_umounted())
--                susfs_set_current_proc_umounted();
-+            /* Disabled for zygisk stability (see kernel_umount.c) */
-+            // if (!susfs_is_current_proc_umounted())
-+            //     susfs_set_current_proc_umounted();
- #endif
-         }
- #endif
+#  #ifdef CONFIG_KSU_SUSFS
+# -            if (!susfs_is_current_proc_umounted())
+# -                susfs_set_current_proc_umounted();
+# +            /* Disabled for zygisk stability (see kernel_umount.c) */
+# +            // if (!susfs_is_current_proc_umounted())
+# +            //     susfs_set_current_proc_umounted();
+#  #endif
+#          }
+#  #endif
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
 index 43f7ce46..3ea7875c 100644
 --- a/kernel/hook/setuid_hook.c
@@ -124,24 +124,24 @@ index 0bf3c695..e04c6064 100644
  
      // use define to avoid ifdef
      #define ksu_init_rc_hook_inactive() (!static_branch_likely(&ksu_is_init_rc_hook_enabled))
-diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-index 32693303..63f9b55c 100644
---- a/kernel/selinux/rules.c
-+++ b/kernel/selinux/rules.c
-@@ -147,6 +147,16 @@ void apply_kernelsu_rules()
-         pr_info("SELinux permissive or disabled, apply rules!\n");
-     }
+# diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
+# index 32693303..63f9b55c 100644
+# --- a/kernel/selinux/rules.c
+# +++ b/kernel/selinux/rules.c
+# @@ -147,6 +147,16 @@ void apply_kernelsu_rules()
+#          pr_info("SELinux permissive or disabled, apply rules!\n");
+#      }
  
-+	/* Avoid re-applying rules / re-backing up policydb when invoked both
-+	 * from kernelsu_init and from the /init second-stage execve hook. */
-+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
-+	if (backup_sepolicy)
-+		return;
-+#else
-+	if (backup_policydb)
-+		return;
-+#endif
-+
- #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
-     struct selinux_policy *pol, *old_pol = selinux_state.policy;
-     mutex_lock(&selinux_state.policy_mutex);
+# +	/* Avoid re-applying rules / re-backing up policydb when invoked both
+# +	 * from kernelsu_init and from the /init second-stage execve hook. */
+# +#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
+# +	if (backup_sepolicy)
+# +		return;
+# +#else
+# +	if (backup_policydb)
+# +		return;
+# +#endif
+# +
+#  #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
+#      struct selinux_policy *pol, *old_pol = selinux_state.policy;
+#      mutex_lock(&selinux_state.policy_mutex);
