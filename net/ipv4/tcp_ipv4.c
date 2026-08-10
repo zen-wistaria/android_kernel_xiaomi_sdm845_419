@@ -2674,6 +2674,12 @@ static int __net_init tcp_sk_init(struct net *net)
 	net->ipv4.sysctl_tcp_ecn = 2;
 	net->ipv4.sysctl_tcp_ecn_fallback = 1;
 
+	net->ipv4.sysctl_tcp_plb_enabled = 0; /* Disabled by default */
+	net->ipv4.sysctl_tcp_plb_idle_rehash_rounds = 0;
+	net->ipv4.sysctl_tcp_plb_rehash_rounds = 12;
+	net->ipv4.sysctl_tcp_plb_suspend_rto_sec = 2;
+	net->ipv4.sysctl_tcp_plb_cong_thresh = 128; /* 50% congestion */
+
 	net->ipv4.sysctl_tcp_base_mss = TCP_BASE_MSS;
 	net->ipv4.sysctl_tcp_min_snd_mss = TCP_MIN_SND_MSS;
 	net->ipv4.sysctl_tcp_probe_threshold = TCP_PROBE_THRESHOLD;

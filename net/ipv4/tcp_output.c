@@ -1161,10 +1161,6 @@ static void tcp_update_skb_after_send(struct sock *sk, struct sk_buff *skb,
 	list_move_tail(&skb->tcp_tsorted_anchor, &tp->tsorted_sent_queue);
 }
 
-INDIRECT_CALLABLE_DECLARE(int ip_queue_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl));
-INDIRECT_CALLABLE_DECLARE(int inet6_csk_xmit(struct sock *sk, struct sk_buff *skb, struct flowi *fl));
-INDIRECT_CALLABLE_DECLARE(void tcp_v4_send_check(struct sock *sk, struct sk_buff *skb));
-
 /* This routine actually transmits TCP packets queued in by
  * tcp_do_sendmsg().  This is used by both the initial
  * transmission and possible later retransmissions.
@@ -1296,9 +1292,7 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 	}
 #endif
 
-	INDIRECT_CALL_INET(icsk->icsk_af_ops->send_check,
-			   tcp_v6_send_check, tcp_v4_send_check,
-			   sk, skb);
+	icsk->icsk_af_ops->send_check(sk, skb);
 	/* BPF prog is the last one writing header option */
 	bpf_skops_write_hdr_opt(sk, skb, NULL, NULL, 0, &opts);
 
@@ -1326,9 +1320,7 @@ static int __tcp_transmit_skb(struct sock *sk, struct sk_buff *skb,
 	memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
 			       sizeof(struct inet6_skb_parm)));
 
-	err = INDIRECT_CALL_INET(icsk->icsk_af_ops->queue_xmit,
-				 inet6_csk_xmit, ip_queue_xmit,
-				 sk, skb, &inet->cork.fl);
+	err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
 
 	if (unlikely(err > 0)) {
 		tcp_enter_cwr(sk);
@@ -1486,7 +1478,7 @@ int tcp_fragment(struct sock *sk, enum tcp_queue tcp_queue,
 		return -ENOMEM;
 	}
 
-	if (skb_unclone_keeptruesize(skb, gfp))
+	if (skb_unclone(skb, gfp))
 		return -ENOMEM;
 
 	/* Get a new skb... force flag on. */
@@ -1594,7 +1586,7 @@ int tcp_trim_head(struct sock *sk, struct sk_buff *skb, u32 len)
 {
 	u32 delta_truesize;
 
-	if (skb_unclone_keeptruesize(skb, GFP_ATOMIC))
+	if (skb_unclone(skb, GFP_ATOMIC))
 		return -ENOMEM;
 
 	delta_truesize = __pskb_trim_head(skb, len);
@@ -1911,13 +1903,12 @@ static u32 tcp_tso_autosize(const struct sock *sk, unsigned int mss_now,
 static u32 tcp_tso_segs(struct sock *sk, unsigned int mss_now)
 {
 	const struct tcp_congestion_ops *ca_ops = inet_csk(sk)->icsk_ca_ops;
-	u32 min_tso, tso_segs;
+	u32 tso_segs;
 
-	min_tso = ca_ops->min_tso_segs ?
-			ca_ops->min_tso_segs(sk) :
-			READ_ONCE(sock_net(sk)->ipv4.sysctl_tcp_min_tso_segs);
-
-	tso_segs = tcp_tso_autosize(sk, mss_now, min_tso);
+	tso_segs = ca_ops->tso_segs ?
+		ca_ops->tso_segs(sk, mss_now) :
+		tcp_tso_autosize(sk, mss_now,
+				 sock_net(sk)->ipv4.sysctl_tcp_min_tso_segs);
 	return min_t(u32, tso_segs, sk->sk_gso_max_segs);
 }
 
@@ -2222,9 +2213,6 @@ static bool tcp_can_coalesce_send_queue_head(struct sock *sk, int len)
 	struct sk_buff *skb, *next;
 
 	skb = tcp_send_head(sk);
-	if (!skb)
-		return false;
-
 	tcp_for_write_queue_from_safe(skb, next, sk) {
 		if (len <= skb->len)
 			break;
@@ -2441,7 +2429,6 @@ static bool tcp_small_queue_check(struct sock *sk, const struct sk_buff *skb,
 		      sk->sk_pacing_rate >> sk->sk_pacing_shift);
 	limit = min_t(unsigned long, limit,
 		      sock_net(sk)->ipv4.sysctl_tcp_limit_output_bytes);
-	limit <<= factor;
 
 	if (refcount_read(&sk->sk_wmem_alloc) > limit) {
 		/* Always send skb if rtx queue is empty or has one skb.
@@ -3123,7 +3110,7 @@ start:
 				 cur_mss, GFP_ATOMIC))
 			return -ENOMEM; /* We'll try again later. */
 	} else {
-		if (skb_unclone_keeptruesize(skb, GFP_ATOMIC))
+		if (skb_unclone(skb, GFP_ATOMIC))
 			return -ENOMEM;
 
 		diff = tcp_skb_pcount(skb);

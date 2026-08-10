@@ -113,6 +113,11 @@ struct netns_ipv4 {
 	int sysctl_tcp_l3mdev_accept;
 #endif
 	int sysctl_tcp_mtu_probing;
+	u8 sysctl_tcp_plb_enabled;
+	u8 sysctl_tcp_plb_idle_rehash_rounds;
+	u8 sysctl_tcp_plb_rehash_rounds;
+	u8 sysctl_tcp_plb_suspend_rto_sec;
+	int sysctl_tcp_plb_cong_thresh;
 	int sysctl_tcp_base_mss;
 	int sysctl_tcp_min_snd_mss;
 	int sysctl_tcp_probe_threshold;
