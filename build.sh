@@ -66,11 +66,14 @@ setup_resukisu() {
 }
 
 # ---- Configure kernel (defconfig + KSU) ------------------------------------
+# Use KCONFIG_NONINTERACTIVE + default answers so kconfig never blocks on
+# (NEW) options during olddefconfig/syncconfig.
 configure() {
+	export KCONFIG_NONINTERACTIVE=1
 	log "Merging defconfig"
 	mkdir -p "$OUT_DIR"
-	scripts/kconfig/merge_config.sh -O "$OUT_DIR" "${DEFCONFIG_FRAGMENTS[@]}" || true
-	make -C "$ROOT_DIR" O="$OUT_DIR" ARCH=arm64 olddefconfig
+	scripts/kconfig/merge_config.sh -O "$OUT_DIR" "${DEFCONFIG_FRAGMENTS[@]}" < /dev/null || true
+	make -C "$ROOT_DIR" O="$OUT_DIR" ARCH=arm64 olddefconfig < /dev/null
 
 	# Vendor techpack drivers are not clang-clean; relax -Werror
 	log "Disabling -Werror in techpack"
@@ -86,10 +89,11 @@ configure() {
 build() {
 	log "Building kernel with ${JOBS} jobs"
 	export LD_LIBRARY_PATH="$TC/lib:${LD_LIBRARY_PATH:-}"
+	export KCONFIG_NONINTERACTIVE=1
 
 	# KSU compat: 4.19 QTI exposes selinux_state struct (not legacy policydb).
 	# Passed via KCFLAGS so KSU_COMMIT_SHA does not turn -dirty.
-	make -C "$ROOT_DIR" -j"$JOBS" O="$OUT_DIR" \
+	make -C "$ROOT_DIR" -j"$JOBS" O="$OUT_DIR" < /dev/null \
 		ARCH=arm64 \
 		CC="$TC/bin/clang" \
 		CLANG_TRIPLE=aarch64-linux-gnu- \
