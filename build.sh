@@ -44,8 +44,12 @@ setup_resukisu() {
 	fi
 
 	log "Checking out ReSukiSU ${RESUKISU_COMMIT}"
-	git -C "${ROOT_DIR}/KernelSU" fetch --unshallow 2>/dev/null ||
-		git -C "${ROOT_DIR}/KernelSU" fetch --depth=1 origin "$RESUKISU_COMMIT"
+	# Full history is required so KSU_LOCAL_VERSION (rev-list --count) stays
+	# ~4355 -> KSU_VERSION 35055. A shallow checkout would yield a tiny count
+	# and a too-low version code.
+	if git -C "${ROOT_DIR}/KernelSU" rev-parse --is-shallow-repository 2>/dev/null | grep -q true; then
+		git -C "${ROOT_DIR}/KernelSU" fetch --unshallow origin 2>/dev/null || true
+	fi
 	git -C "${ROOT_DIR}/KernelSU" checkout --detach "$RESUKISU_COMMIT"
 
 	log "Wiring drivers/kernelsu"
