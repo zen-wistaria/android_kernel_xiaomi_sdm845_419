@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+trap 'echo "ERROR: script exited at line $LINENO (exit code $?)"' ERR
 
 # ---------------------------------------------------------------------------
 # ReSukiSU + SUSFS kernel builder for Xiaomi Poco F1 (beryllium), sdm845, 4.19
@@ -21,6 +22,7 @@ RESUKISU_REPO="https://github.com/ReSukiSU/ReSukiSU.git"
 # Backports applied on top of ReSukiSU (committed with a recognizable name)
 KSU_BACKPORT_PATCH="${ROOT_DIR}/KernelSU-backports.patch"
 KSU_BACKPORT_COMMIT="ReSukiSU backports: independent hooks, sus_path app-flag, ksu_init_rc_hook"
+REPO_BUILD_COMMIT="kernelsu: update submodule pointer to ReSukiSU backports"
 
 DEFCONFIG_FRAGMENTS=(
 	"arch/arm64/configs/vendor/sdm845-perf_defconfig"
@@ -36,6 +38,17 @@ log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 
+# Return 0 if a commit whose message matches $1 exists in the git repo at $2.
+# Uses `git log --grep` (native filtering) instead of piping into `grep -q`,
+# which avoids the classic SIGPIPE + `set -o pipefail` false-negative: `grep
+# -q` can close its stdin as soon as it finds a match, causing the upstream
+# `git log` to receive SIGPIPE and exit non-zero, which pipefail then
+# surfaces as pipeline failure even though the pattern *was* found.
+commit_exists() {
+	local pattern="$1" repo="$2"
+	[ -n "$(git -C "$repo" log --oneline --grep="$pattern" -F)" ]
+}
+
 # ---- Setup ReSukiSU submodule at pinned commit + apply backports ----------
 setup_resukisu() {
 	if [[ ! -e "${ROOT_DIR}/KernelSU/.git" ]]; then
@@ -47,7 +60,7 @@ setup_resukisu() {
 	# Full history is required so KSU_LOCAL_VERSION (rev-list --count) stays
 	# ~4355 -> KSU_VERSION 35055. A shallow checkout would yield a tiny count
 	# and a too-low version code.
-	if git -C "${ROOT_DIR}/KernelSU" rev-parse --is-shallow-repository 2>/dev/null | grep -q true; then
+	if [ "$(git -C "${ROOT_DIR}/KernelSU" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
 		git -C "${ROOT_DIR}/KernelSU" fetch --unshallow origin 2>/dev/null || true
 	fi
 	git -C "${ROOT_DIR}/KernelSU" checkout --detach "$RESUKISU_COMMIT"
@@ -60,7 +73,7 @@ setup_resukisu() {
 		sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' "${ROOT_DIR}/drivers/Kconfig"
 
 	# Apply + commit backports with a recognizable name (idempotent)
-	if git -C "${ROOT_DIR}/KernelSU" log --oneline | grep -q "ReSukiSU backports:"; then
+	if commit_exists "$KSU_BACKPORT_COMMIT" "${ROOT_DIR}/KernelSU"; then
 		log "KernelSU backports already committed"
 	else
 		git -C "${ROOT_DIR}/KernelSU" checkout -- kernel/ 2>/dev/null || true
@@ -74,7 +87,7 @@ setup_resukisu() {
 	# Sync parent submodule pointer so the tree stays clean (no -dirty suffix)
 	if ! git diff --quiet -- KernelSU 2>/dev/null; then
 		git add KernelSU
-		git -C "$ROOT_DIR" commit -m "kernelsu: update submodule pointer to ReSukiSU backports" 2>/dev/null ||
+		git -C "$ROOT_DIR" commit -m "$REPO_BUILD_COMMIT" 2>/dev/null ||
 			log "submodule pointer commit skipped"
 		log "Submodule pointer synced"
 	fi
@@ -161,6 +174,18 @@ clean() {
   rm -rf "$OUT_DIR"
 }
 
+clean_commit() {
+  if commit_exists "$KSU_BACKPORT_COMMIT" "$ROOT_DIR/KernelSU"; then
+	log "Resetting ReSukiSU submodule to pinned commit"
+  	git -C "$ROOT_DIR/KernelSU" reset --hard HEAD~1
+  fi
+
+  if commit_exists "$REPO_BUILD_COMMIT" "$ROOT_DIR"; then
+	log "Resetting root repo to remove ReSukiSU submodule pointer commit"
+	git -C "$ROOT_DIR" reset --hard HEAD~1
+  fi
+}
+
 # ---- Main -----------------------------------------------------------------
 main() {
 	cd "$ROOT_DIR"
@@ -169,7 +194,7 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   setup_resukisu; configure; build; collect ;;
+		build)   setup_resukisu; configure; build; collect; clean_commit ;;
 		collect) collect ;;
 		setup)   setup_resukisu ;;
 		config)  configure ;;
