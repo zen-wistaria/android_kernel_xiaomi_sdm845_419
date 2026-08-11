@@ -66,6 +66,14 @@ setup_resukisu() {
 		git -C "${ROOT_DIR}/KernelSU" commit -m "$KSU_BACKPORT_COMMIT"
 		log "Committed KernelSU backports"
 	fi
+
+	# Sync parent submodule pointer so the tree stays clean (no -dirty suffix)
+	if ! git diff --quiet -- KernelSU 2>/dev/null; then
+		git add KernelSU
+		git -C "$ROOT_DIR" commit -m "kernelsu: update submodule pointer to ReSukiSU backports" 2>/dev/null ||
+			log "submodule pointer commit skipped"
+		log "Submodule pointer synced"
+	fi
 }
 
 # ---- Configure kernel (defconfig + KSU) ------------------------------------
