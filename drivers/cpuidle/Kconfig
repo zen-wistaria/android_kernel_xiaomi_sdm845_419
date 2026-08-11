@@ -21,6 +21,9 @@ config CPU_IDLE_GOV_LADDER
 config CPU_IDLE_GOV_MENU
 	bool "Menu governor (for tickless system)"
 
+config CPU_IDLE_GOV_TEO
+	bool "TEO governor (for tickless system)"
+
 config DT_IDLE_STATES
 	bool
 

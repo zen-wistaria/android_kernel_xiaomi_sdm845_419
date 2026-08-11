@@ -83,6 +83,13 @@ struct sugov_cpu {
 #ifdef CONFIG_NO_HZ_COMMON
 	unsigned long		saved_idle_calls;
 #endif
+
+	/*
+	 * The last waker whose IO wakeup triggered an iowait boost, used to
+	 * avoid boosting a task that keeps waking up itself (e.g. a polling
+	 * loop) which would only waste energy.
+	 */
+	struct task_struct	*wake_ups_same_task;
 };
 
 static DEFINE_PER_CPU(struct sugov_cpu, sugov_cpu);
@@ -283,7 +290,7 @@ static void sugov_deferred_update(struct sugov_policy *sg_policy, u64 time,
 	irq_work_queue(&sg_policy->irq_work);
 }
 
-#define TARGET_LOAD 80
+#define TARGET_LOAD 95
 /**
  * get_next_freq - Compute a new frequency for a given cpufreq policy.
  * @sg_policy: schedutil policy object to compute the new frequency for.
@@ -525,6 +532,19 @@ static void sugov_iowait_boost(struct sugov_cpu *sg_cpu, u64 time,
 	if (sg_cpu->iowait_boost_pending)
 		return;
 	sg_cpu->iowait_boost_pending = true;
+
+	/*
+	 * If the waker task does not change, the next wakeup of the same
+	 * task after IO may be the same task polling for a completion event
+	 * (eg. spinning on an in-flight disk operation).  In that case the
+	 * frequency boost is not useful and only wastes energy, so don't
+	 * boost at all for a repeated waker.
+	 */
+	if (READ_ONCE(cpu_rq(sg_cpu->cpu)->curr) == sg_cpu->wake_ups_same_task) {
+		sg_cpu->wake_ups_same_task = NULL;
+		return;
+	}
+	sg_cpu->wake_ups_same_task = READ_ONCE(cpu_rq(sg_cpu->cpu)->curr);
 
 	/* Double the boost at each request */
 	if (sg_cpu->iowait_boost) {
