@@ -181,8 +181,8 @@ clean_commit() {
   fi
 
   if commit_exists "$REPO_BUILD_COMMIT" "$ROOT_DIR"; then
-	log "Resetting root repo to remove ReSukiSU submodule pointer commit"
-	git -C "$ROOT_DIR" reset --hard HEAD~1
+	log "Resetting root repo to remove ReSukiSU submodule pointer commit (soft, keeping working tree)"
+	git -C "$ROOT_DIR" reset --soft HEAD~1
   fi
 }
 
@@ -194,7 +194,7 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   setup_resukisu; configure; build; collect; clean_commit ;;
+		build)   clean_commit; setup_resukisu; configure; build; collect; clean_commit ;;
 		collect) collect ;;
 		setup)   setup_resukisu ;;
 		config)  configure ;;
