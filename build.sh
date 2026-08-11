@@ -8,8 +8,11 @@ set -Eeuo pipefail
 # ---- Configurable variables -----------------------------------------------
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="${OUT_DIR:-${ROOT_DIR}/out}"
-TC="${TC:-${HOME}/Coding/proton-clang}"
+DIST_DIR="${DIST_DIR:-${ROOT_DIR}/dist}"
+TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-${HOME}/Coding/proton-clang}"
 JOBS="${JOBS:-$(nproc)}"
+KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-zen}"
+KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 
 # ReSukiSU commit to pin (reproducible build). beaaea0 = v4.1.0-1341-gbeaaea0e
 RESUKISU_COMMIT="${RESUKISU_COMMIT:-beaaea0eb895dc41e7b9bf5e3f39e57aa9635bab}"
@@ -88,23 +91,25 @@ configure() {
 # ---- Build ----------------------------------------------------------------
 build() {
 	log "Building kernel with ${JOBS} jobs"
-	export LD_LIBRARY_PATH="$TC/lib:${LD_LIBRARY_PATH:-}"
+	export LD_LIBRARY_PATH="$TOOLCHAIN_DIR/lib:${LD_LIBRARY_PATH:-}"
 	export KCONFIG_NONINTERACTIVE=1
 
 	# KSU compat: 4.19 QTI exposes selinux_state struct (not legacy policydb).
 	# Passed via KCFLAGS so KSU_COMMIT_SHA does not turn -dirty.
 	make -C "$ROOT_DIR" -j"$JOBS" O="$OUT_DIR" < /dev/null \
 		ARCH=arm64 \
-		CC="$TC/bin/clang" \
+		CC="$TOOLCHAIN_DIR/bin/clang" \
 		CLANG_TRIPLE=aarch64-linux-gnu- \
-		CROSS_COMPILE="$TC/bin/aarch64-linux-gnu-" \
+		CROSS_COMPILE="$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-" \
 		CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-		AR="$TC/bin/llvm-ar" \
-		NM="$TC/bin/llvm-nm" \
-		OBJCOPY="$TC/bin/llvm-objcopy" \
-		OBJDUMP="$TC/bin/llvm-objdump" \
-		STRIP="$TC/bin/llvm-strip" \
+		AR="$TOOLCHAIN_DIR/bin/llvm-ar" \
+		NM="$TOOLCHAIN_DIR/bin/llvm-nm" \
+		OBJCOPY="$TOOLCHAIN_DIR/bin/llvm-objcopy" \
+		OBJDUMP="$TOOLCHAIN_DIR/bin/llvm-objdump" \
+		STRIP="$TOOLCHAIN_DIR/bin/llvm-strip" \
 		LLVM_IAS=1 \
+		KBUILD_BUILD_USER="$KBUILD_BUILD_USER" \
+		KBUILD_BUILD_HOST="$KBUILD_BUILD_HOST" \
 		KCFLAGS=-DKSU_COMPAT_HAS_SELINUX_STATE
 
 	[[ -s "$OUT_DIR/arch/arm64/boot/Image.gz-dtb" ]] ||
@@ -113,15 +118,29 @@ build() {
 	printf 'Image: %s\n' "$OUT_DIR/arch/arm64/boot/Image.gz-dtb"
 }
 
+# ---- Collect artifacts -----------------------------------------------------
+collect() {
+	local boot="$OUT_DIR/arch/arm64/boot"
+	[[ -s "$boot/Image.gz-dtb" ]] || die "Image.gz-dtb missing"
+	rm -rf "$DIST_DIR"
+	mkdir -p "$DIST_DIR"
+	cp -f "$boot/Image.gz" "$boot/Image.gz-dtb" "$OUT_DIR/.config" "$DIST_DIR/"
+	log "Artifacts collected"
+	printf 'Dist: %s\n' "$DIST_DIR"
+}
+
 usage() {
   cat <<EOF
-Usage: $0 [build|setup|config|clean]
+Usage: $0 [build|setup|config|collect|clean]
 
 Environment overrides:
-  JOBS=N              Parallel build jobs (default: nproc)
-  OUT_DIR=path        Kernel output directory
-  TC=path             Toolchain directory (default: ~/Coding/proton-clang)
-  RESUKISU_COMMIT=sha ReSukiSU revision to check out
+  JOBS=N                Parallel build jobs (default: nproc)
+  OUT_DIR=path          Kernel output directory
+  DIST_DIR=path         Collected artifacts directory (default: ./dist)
+  TC=path               Toolchain directory (default: ~/Coding/proton-clang)
+  KBUILD_BUILD_USER=user Build user in kernel version string (default: zen)
+  KBUILD_BUILD_HOST=host Build host in kernel version string (default: ubuntu)
+  RESUKISU_COMMIT=sha   ReSukiSU revision to check out
 EOF
 }
 
@@ -138,7 +157,8 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   setup_resukisu; configure; build ;;
+		build)   setup_resukisu; configure; build; collect ;;
+		collect) collect ;;
 		setup)   setup_resukisu ;;
 		config)  configure ;;
 		clean)   clean ;;
