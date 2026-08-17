@@ -16,7 +16,7 @@ KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-zen}"
 KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 
 # ReSukiSU commit to pin (reproducible build). beaaea0 = v4.1.0-1341-gbeaaea0e
-RESUKISU_COMMIT="${RESUKISU_COMMIT:-beaaea0eb895dc41e7b9bf5e3f39e57aa9635bab}"
+RESUKISU_COMMIT="${RESUKISU_COMMIT:-8e2b9945b4f8cf54c49bd5d87c0c802ed10d8ccb}"
 RESUKISU_REPO="https://github.com/ReSukiSU/ReSukiSU.git"
 
 # Backports applied on top of ReSukiSU (committed with a recognizable name)
