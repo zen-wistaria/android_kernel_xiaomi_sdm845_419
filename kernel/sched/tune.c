@@ -148,7 +148,7 @@ root_schedtune = {
 	.colocate = false,
 	.colocate_update_disabled = false,
 #endif
-	.prefer_idle = 0,
+	.prefer_idle = 1,
 };
 
 /*
