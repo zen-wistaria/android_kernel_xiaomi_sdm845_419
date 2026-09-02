@@ -16,7 +16,7 @@ KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-zen}"
 KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 
 # ReSukiSU commit to pin (reproducible build). beaaea0 = v4.1.0-1341-gbeaaea0e
-RESUKISU_COMMIT="${RESUKISU_COMMIT:-8e2b9945b4f8cf54c49bd5d87c0c802ed10d8ccb}"
+RESUKISU_COMMIT="${RESUKISU_COMMIT:-0b5efe9e0102c43ca5c41174d500f5a7080cd0c7}"
 RESUKISU_REPO="https://github.com/ReSukiSU/ReSukiSU.git"
 
 # Backports applied on top of ReSukiSU (committed with a recognizable name)
@@ -78,7 +78,8 @@ setup_resukisu() {
 	else
 		git -C "${ROOT_DIR}/KernelSU" checkout -- kernel/ 2>/dev/null || true
 		log "Applying KernelSU backports"
-		(cd "${ROOT_DIR}/KernelSU" && git apply "${KSU_BACKPORT_PATCH}")
+		# (cd "${ROOT_DIR}/KernelSU" && git apply "${KSU_BACKPORT_PATCH}")
+		(cd "${ROOT_DIR}/KernelSU" && git apply --reject --whitespace=fix "${KSU_BACKPORT_PATCH}")
 		git -C "${ROOT_DIR}/KernelSU" add -A
 		git -C "${ROOT_DIR}/KernelSU" commit -m "$KSU_BACKPORT_COMMIT"
 		log "Committed KernelSU backports"

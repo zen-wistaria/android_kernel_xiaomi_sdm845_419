@@ -85,31 +85,22 @@ index 45f87e42..b0c2a5fe 100644
 #          }
 #  #endif
 diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index 43f7ce46..3ea7875c 100644
+index 070b2fbc..755783f7 100644
 --- a/kernel/hook/setuid_hook.c
 +++ b/kernel/hook/setuid_hook.c
-@@ -27,6 +27,9 @@
- #include "compat/kernel_compat.h"
- #include "feature/kernel_umount.h"
- #include "feature/sucompat.h"
-+#ifdef CONFIG_KSU_SUSFS
-+#include <linux/susfs_def.h>
-+#endif
+@@ -185,6 +185,12 @@ int ksu_handle_setuid(uid_t new_uid, uid_t old_uid)
  
- static inline void ksu_set_file_immutable(const char *path_name, bool immutable)
- {
-@@ -140,6 +143,11 @@ int ksu_handle_setuid(uid_t new_uid, uid_t old_uid)
-         return 0;
-     } else {
-         ksu_set_current_proc_unprivillege();
+     ksu_set_current_proc_unprivillege();
+ 
 +#ifdef CONFIG_KSU_SUSFS
 +        task_lock(current);
 +        current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
 +        task_unlock(current);
 +#endif
-     }
- #endif // #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
- 
++
+     // Handle kernel umount
+     ksu_handle_umount(old_uid, new_uid);
+
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
 index 0bf3c695..e04c6064 100644
 --- a/kernel/runtime/ksud_integration.c
