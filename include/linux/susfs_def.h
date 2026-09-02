@@ -64,13 +64,59 @@
 
 #define TASK_STRUCT_NON_ROOT_USER_APP_PROC BIT(24)
 #define TASK_STRUCT_UMOUNTED BIT(25)
+#define TASK_STRUCT_UMOUNTED_FOR_ZYGOTE_NEXT BIT(26)
 
 #define AS_FLAGS_SUS_MAP 39
+
+static inline bool susfs_is_current_proc_umounted(void)
+{
+	return (likely(current->susfs_task_state & TASK_STRUCT_UMOUNTED));
+}
+
+static inline void susfs_set_current_proc_umounted(void)
+{
+	current->susfs_task_state |= TASK_STRUCT_UMOUNTED;
+}
+
+static inline void susfs_clear_current_proc_umounted(void)
+{
+	current->susfs_task_state &= ~TASK_STRUCT_UMOUNTED;
+}
+
+static inline bool susfs_is_current_proc_umounted_for_zygote_next(void)
+{
+	return (likely(current->susfs_task_state & TASK_STRUCT_UMOUNTED_FOR_ZYGOTE_NEXT));
+}
+
+static inline void susfs_set_current_proc_umounted_for_zygote_next(void)
+{
+	current->susfs_task_state |= TASK_STRUCT_UMOUNTED_FOR_ZYGOTE_NEXT;
+}
+
+static inline void susfs_clear_current_proc_umounted_for_zygote_next(void)
+{
+	current->susfs_task_state &= ~TASK_STRUCT_UMOUNTED_FOR_ZYGOTE_NEXT;
+}
 
 static inline bool susfs_is_current_proc_umounted_app(void)
 {
 	return (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC) &&
 			current_uid().val >= 10000);
+}
+
+static inline bool susfs_is_current_proc_no_su(void)
+{
+	return (likely(current->susfs_task_state & TASK_STRUCT_NON_ROOT_USER_APP_PROC));
+}
+
+static inline void susfs_set_current_proc_no_su(void)
+{
+	current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
+}
+
+static inline void susfs_clear_current_proc_no_su(void)
+{
+	current->susfs_task_state &= ~TASK_STRUCT_NON_ROOT_USER_APP_PROC;
 }
 
 #define SUSFS_IS_INODE_SUS_MAP(inode) \

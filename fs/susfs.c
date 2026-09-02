@@ -1222,16 +1222,6 @@ void susfs_start_sdcard_monitor_fn(void)
 	SUSFS_LOGI("susfs_start_sdcard_monitor_fn called (stub)\n");
 }
 
-bool susfs_is_current_proc_umounted(void)
-{
-	return !!(current->susfs_task_state & TASK_STRUCT_UMOUNTED);
-}
-
-void susfs_set_current_proc_umounted(void)
-{
-	current->susfs_task_state |= TASK_STRUCT_UMOUNTED;
-}
-
 #ifdef CONFIG_KSU_SUSFS_SUS_MAP
 int susfs_add_sus_map(void __user **arg)
 {
