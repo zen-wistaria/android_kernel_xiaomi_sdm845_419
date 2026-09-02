@@ -51,58 +51,50 @@ index 45f87e42..b0c2a5fe 100644
  menu "KernelSU - Manual Hook Auto hook"
      depends on KSU_MANUAL_HOOK
  
-# diff --git a/kernel/feature/kernel_umount.c b/kernel/feature/kernel_umount.c
-# index 0cc95114..24736c6c 100644
-# --- a/kernel/feature/kernel_umount.c
-# +++ b/kernel/feature/kernel_umount.c
-# @@ -177,8 +177,10 @@ int ksu_handle_umount(uid_t old_uid, uid_t new_uid)
-#  skip_umount_task:
-#      // do susfs setuid when susfs enabled
-#  #ifdef CONFIG_KSU_SUSFS
-# -    schedule_work(&susfs_extra_works);
-# -    susfs_set_current_proc_umounted();
-# +    /* Disabled: marking every app fork UMOUNTED + scheduling extra work
-# +     * destabilizes zygisk/zygote. Susfs umount behavior re-evaluated. */
-# +    // schedule_work(&susfs_extra_works);
-# +    // susfs_set_current_proc_umounted();
-#  #endif
+diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
+index 4fd64343..0f7648ee 100644
+--- a/kernel/feature/sucompat.c
++++ b/kernel/feature/sucompat.c
+@@ -482,7 +482,7 @@ int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *
+ #endif
+ #endif
  
-#      return 0;
-# diff --git a/kernel/feature/sucompat.c b/kernel/feature/sucompat.c
-# index e707f11c..b89aa850 100644
-# --- a/kernel/feature/sucompat.c
-# +++ b/kernel/feature/sucompat.c
-# @@ -265,8 +265,9 @@ static inline void ksu_handle_execveat_init(const char *filename, void *envp)
-#                  ksu_set_current_proc_unprivillege();
+-#ifdef CONFIG_KSU_SUSFS
++#if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+ int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags)
+ {
+     const struct cred *old_cred;
+@@ -556,7 +556,7 @@ int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode,
+ }
+ #endif
  
-#  #ifdef CONFIG_KSU_SUSFS
-# -            if (!susfs_is_current_proc_umounted())
-# -                susfs_set_current_proc_umounted();
-# +            /* Disabled for zygisk stability (see kernel_umount.c) */
-# +            // if (!susfs_is_current_proc_umounted())
-# +            //     susfs_set_current_proc_umounted();
-#  #endif
-#          }
-#  #endif
-diff --git a/kernel/hook/setuid_hook.c b/kernel/hook/setuid_hook.c
-index 070b2fbc..755783f7 100644
---- a/kernel/hook/setuid_hook.c
-+++ b/kernel/hook/setuid_hook.c
-@@ -185,6 +185,12 @@ int ksu_handle_setuid(uid_t new_uid, uid_t old_uid)
+-#ifdef CONFIG_KSU_SUSFS
++#if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+ int ksu_handle_stat(int *dfd, struct filename **filename, int *flags)
+ {
+     const struct cred *old_cred;
+diff --git a/kernel/feature/sucompat.h b/kernel/feature/sucompat.h
+index 0c6365c0..6d591e91 100644
+--- a/kernel/feature/sucompat.h
++++ b/kernel/feature/sucompat.h
+@@ -14,13 +14,13 @@ void ksu_sucompat_init(void);
+ void ksu_sucompat_exit(void);
  
-     ksu_set_current_proc_unprivillege();
+ // Handler functions exported for hook_manager
+-#ifdef CONFIG_KSU_SUSFS
++#if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+ int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode, int *__unused_flags);
+ int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
+ #else
+ int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags);
+ int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+-#endif // #ifdef CONFIG_KSU_SUSFS
++#endif // #if defined(CONFIG_KSU_SUSFS) && LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
  
-+#ifdef CONFIG_KSU_SUSFS
-+        task_lock(current);
-+        current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
-+        task_unlock(current);
-+#endif
-+
-     // Handle kernel umount
-     ksu_handle_umount(old_uid, new_uid);
-
+ #ifdef CONFIG_KSU_TRACEPOINT_HOOK
+ #include <asm/current.h>
 diff --git a/kernel/runtime/ksud_integration.c b/kernel/runtime/ksud_integration.c
-index 0bf3c695..e04c6064 100644
+index 2ddcf312..2d90ffe2 100644
 --- a/kernel/runtime/ksud_integration.c
 +++ b/kernel/runtime/ksud_integration.c
 @@ -98,6 +98,9 @@ static void stop_execve_hook(void);
@@ -115,24 +107,3 @@ index 0bf3c695..e04c6064 100644
  
      // use define to avoid ifdef
      #define ksu_init_rc_hook_inactive() (!static_branch_likely(&ksu_is_init_rc_hook_enabled))
-# diff --git a/kernel/selinux/rules.c b/kernel/selinux/rules.c
-# index 32693303..63f9b55c 100644
-# --- a/kernel/selinux/rules.c
-# +++ b/kernel/selinux/rules.c
-# @@ -147,6 +147,16 @@ void apply_kernelsu_rules()
-#          pr_info("SELinux permissive or disabled, apply rules!\n");
-#      }
- 
-# +	/* Avoid re-applying rules / re-backing up policydb when invoked both
-# +	 * from kernelsu_init and from the /init second-stage execve hook. */
-# +#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
-# +	if (backup_sepolicy)
-# +		return;
-# +#else
-# +	if (backup_policydb)
-# +		return;
-# +#endif
-# +
-#  #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0) || defined(KSU_COMPAT_HAS_POLICY_MUTEX)
-#      struct selinux_policy *pol, *old_pol = selinux_state.policy;
-#      mutex_lock(&selinux_state.policy_mutex);
