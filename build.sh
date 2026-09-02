@@ -176,14 +176,14 @@ clean() {
 }
 
 clean_commit() {
-  if commit_exists "$KSU_BACKPORT_COMMIT" "$ROOT_DIR/KernelSU"; then
+  if [ -d "$ROOT_DIR/KernelSU/.git" ] && [ "$(git -C "$ROOT_DIR/KernelSU" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$KSU_BACKPORT_COMMIT" ]; then
 	log "Resetting ReSukiSU submodule to pinned commit"
   	git -C "$ROOT_DIR/KernelSU" reset --hard HEAD~1
   fi
 
-  if commit_exists "$REPO_BUILD_COMMIT" "$ROOT_DIR"; then
-	log "Resetting root repo to remove ReSukiSU submodule pointer commit (soft, keeping working tree)"
-	git -C "$ROOT_DIR" reset --soft HEAD~1
+  if [ "$(git -C "$ROOT_DIR" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$REPO_BUILD_COMMIT" ]; then
+	log "Resetting root repo to remove ReSukiSU submodule pointer commit"
+	git -C "$ROOT_DIR" reset --mixed HEAD~1
   fi
 }
 
