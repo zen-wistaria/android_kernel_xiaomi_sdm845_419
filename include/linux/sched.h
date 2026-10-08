@@ -534,13 +534,19 @@ struct sched_entity {
 	struct load_weight		load;
 	unsigned long			runnable_weight;
 	struct rb_node			run_node;
+	u64				deadline;
+	u64				min_deadline;
 	struct list_head		group_node;
 	unsigned int			on_rq;
 
+	unsigned int			custom_slice : 1;
+
 	u64				exec_start;
 	u64				sum_exec_runtime;
-	u64				vruntime;
 	u64				prev_sum_exec_runtime;
+	u64				vruntime;
+	s64				vlag;
+	u64				slice;
 
 	u64				nr_migrations;
 
@@ -821,6 +827,37 @@ struct wake_q_node {
 	struct wake_q_node *next;
 };
 
+#ifdef CONFIG_SCHED_BORE
+#define BORE_BC_TIMESTAMP_SHIFT 16
+
+struct bore_bc {
+	union {
+		struct {
+			u64		timestamp:	48;
+			u64		penalty:	16;
+		};
+		u64			value;
+	};
+};
+
+struct bore_ctx {
+	u64				burst_time;
+	u16				prev_penalty;
+	u16				curr_penalty;
+	union {
+		u16			penalty;
+		struct {
+			u8		_;
+			u8		score;
+		};
+	};
+	bool			stop_update;
+	bool			futex_waiting;
+	struct bore_bc	subtree;
+	struct bore_bc	group;
+};
+#endif /* CONFIG_SCHED_BORE */
+
 struct task_struct {
 #ifdef CONFIG_THREAD_INFO_IN_TASK
 	/*
@@ -874,6 +911,9 @@ struct task_struct {
 
 	const struct sched_class	*sched_class;
 	struct sched_entity		se;
+#ifdef CONFIG_SCHED_BORE
+	struct bore_ctx			bore;
+#endif /* CONFIG_SCHED_BORE */
 	struct sched_rt_entity		rt;
 	u64				 last_sleep_ts;
 

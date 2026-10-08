@@ -96,6 +96,10 @@
 #include <linux/cpufreq_times.h>
 #include <linux/scs.h>
 
+#ifdef CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif /* CONFIG_SCHED_BORE */
+
 #include <linux/pgtable.h>
 #include <asm/pgalloc.h>
 #include <linux/uaccess.h>
@@ -2111,6 +2115,10 @@ static __latent_entropy struct task_struct *copy_process(
 	 */
 
 	p->start_time = ktime_get_ns();
+#ifdef CONFIG_SCHED_BORE
+	if (likely(p->pid))
+		task_fork_bore(p, current, clone_flags, p->start_time);
+#endif /* CONFIG_SCHED_BORE */
 	p->real_start_time = ktime_get_boottime_ns();
 
 	/*
@@ -2178,9 +2186,11 @@ static __latent_entropy struct task_struct *copy_process(
 			 * tasklist_lock with adding child to the process tree
 			 * for propagate_has_child_subreaper optimization.
 			 */
-			p->signal->has_child_subreaper = p->real_parent->signal->has_child_subreaper ||
-							 p->real_parent->signal->is_child_subreaper;
+#ifdef CONFIG_SCHED_BORE
+			list_add_tail_rcu(&p->sibling, &p->real_parent->children);
+#else /* !CONFIG_SCHED_BORE */
 			list_add_tail(&p->sibling, &p->real_parent->children);
+#endif /* CONFIG_SCHED_BORE */
 			list_add_tail_rcu(&p->tasks, &init_task.tasks);
 			attach_pid(p, PIDTYPE_TGID);
 			attach_pid(p, PIDTYPE_PGID);
