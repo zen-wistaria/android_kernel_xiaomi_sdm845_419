@@ -299,7 +299,7 @@ static int sel_mmap_handle_status(struct file *filp,
 			       size, vma->vm_page_prot);
 }
 
-static const struct file_operations sel_handle_status_ops = {
+const struct file_operations sel_handle_status_ops = {
 #ifdef CONFIG_KSU_SUSFS
 	.open		= my_sel_open_handle_status,
 #else
@@ -859,7 +859,7 @@ static ssize_t my_write_access(struct file *file, char *buf, size_t size);
 static ssize_t my_write_context(struct file *file, char *buf, size_t size);
 #endif // #ifdef CONFIG_KSU_SUSFS
 
-static ssize_t (*const write_op[])(struct file *, char *, size_t) = {
+ssize_t (*write_op[])(struct file *, char *, size_t) = {
 #ifdef CONFIG_KSU_SUSFS
 	[SEL_ACCESS] = my_write_access,
 #else
