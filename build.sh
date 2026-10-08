@@ -16,12 +16,16 @@ KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-zen}"
 KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 
 # BakaSU commit to pin (reproducible build)
-BAKASU_COMMIT="${BAKASU_COMMIT:-373303c525d05c8b47801305f506ef9124dbd6e6}"
 BAKASU_REPO="https://github.com/Baka-SU/BakaSU.git"
+BAKASU_COMMIT="${BAKASU_COMMIT:-373303c525d05c8b47801305f506ef9124dbd6e6}"
+
+# NoMount commit to pin (reproducible build)
+NOMOUNT_REPO="https://github.com/maxsteeel/nomount.git"
+NOMOUNT_COMMIT="${NOMOUNT_COMMIT:-7e7342cd48841cfedd00be2fd20a0311f69c48c5}"
 
 # Backports applied on top of BakaSU (committed with a recognizable name)
 # KSU_BACKPORT_PATCH="${ROOT_DIR}/KernelSU-backports.patch"
-KSU_BACKPORT_COMMIT="BakaSU backports: independent hooks, sus_path app-flag, ksu_init_rc_hook"
+# KSU_BACKPORT_COMMIT="BakaSU backports: independent hooks, sus_path app-flag, ksu_init_rc_hook"
 REPO_BUILD_COMMIT="kernelsu: update submodule pointer to BakaSU backports"
 
 DEFCONFIG_FRAGMENTS=(
@@ -73,16 +77,16 @@ setup_bakasu() {
 		sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' "${ROOT_DIR}/drivers/Kconfig"
 
 	# Apply + commit backports with a recognizable name (idempotent)
-	if commit_exists "$KSU_BACKPORT_COMMIT" "${ROOT_DIR}/KernelSU"; then
-		log "KernelSU backports already committed"
-	else
-		git -C "${ROOT_DIR}/KernelSU" checkout -- kernel/ 2>/dev/null || true
-		log "Applying KernelSU backports"
+	# if commit_exists "$KSU_BACKPORT_COMMIT" "${ROOT_DIR}/KernelSU"; then
+	# 	log "KernelSU backports already committed"
+	# else
+	# 	git -C "${ROOT_DIR}/KernelSU" checkout -- kernel/ 2>/dev/null || true
+	# 	log "Applying KernelSU backports"
 		# (cd "${ROOT_DIR}/KernelSU" && git apply --reject --whitespace=fix "${KSU_BACKPORT_PATCH}")
 		# git -C "${ROOT_DIR}/KernelSU" add -A
 		# git -C "${ROOT_DIR}/KernelSU" commit -m "$KSU_BACKPORT_COMMIT"
-		log "Committed KernelSU backports"
-	fi
+	# 	log "Committed KernelSU backports"
+	# fi
 
 	# Sync parent submodule pointer so the tree stays clean (no -dirty suffix)
 	if ! git diff --quiet -- KernelSU 2>/dev/null; then
@@ -91,6 +95,23 @@ setup_bakasu() {
 			log "submodule pointer commit skipped"
 		log "Submodule pointer synced"
 	fi
+}
+
+setup_nomount() {
+	if [[ ! -e "${ROOT_DIR}/NoMount/.git" ]]; then
+		log "Cloning NoMount"
+		git clone --filter=blob:none "$NOMOUNT_REPO" "${ROOT_DIR}/NoMount"
+	fi
+	
+	log "Checking out NoMount ${NOMOUNT_COMMIT}"
+	git -C "${ROOT_DIR}/NoMount" checkout --detach "$NOMOUNT_COMMIT"
+
+    log "Wiring NoMount"
+    ln -sfn ../NoMount/kernel/src "${ROOT_DIR}/fs/nomount"
+    grep -qE 'obj-\$\(CONFIG_NOMOUNT\)\s*\+= nomount/' "${ROOT_DIR}/fs/Makefile" ||
+        printf '\nobj-$(CONFIG_NOMOUNT) += nomount/\n' >> "${ROOT_DIR}/fs/Makefile"
+    grep -q 'source "fs/nomount/Kconfig"' "${ROOT_DIR}/fs/Kconfig" ||
+        sed -i '/^endmenu/i source "fs/nomount/Kconfig"' "${ROOT_DIR}/fs/Kconfig"
 }
 
 # ---- Configure kernel (defconfig + KSU) ------------------------------------
@@ -179,17 +200,17 @@ clean() {
   rm -rf "$OUT_DIR"
 }
 
-clean_commit() {
-  if [ -d "$ROOT_DIR/KernelSU/.git" ] && [ "$(git -C "$ROOT_DIR/KernelSU" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$KSU_BACKPORT_COMMIT" ]; then
-	log "Resetting BakaSU submodule to pinned commit"
-  	git -C "$ROOT_DIR/KernelSU" reset --hard HEAD~1
-  fi
+# clean_commit() {
+#   if [ -d "$ROOT_DIR/KernelSU/.git" ] && [ "$(git -C "$ROOT_DIR/KernelSU" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$KSU_BACKPORT_COMMIT" ]; then
+# 	log "Resetting BakaSU submodule to pinned commit"
+#   	git -C "$ROOT_DIR/KernelSU" reset --hard HEAD~1
+#   fi
 
-  if [ "$(git -C "$ROOT_DIR" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$REPO_BUILD_COMMIT" ]; then
-	log "Resetting root repo to remove BakaSU submodule pointer commit"
-	git -C "$ROOT_DIR" reset --mixed HEAD~1
-  fi
-}
+#   if [ "$(git -C "$ROOT_DIR" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$REPO_BUILD_COMMIT" ]; then
+# 	log "Resetting root repo to remove BakaSU submodule pointer commit"
+# 	git -C "$ROOT_DIR" reset --mixed HEAD~1
+#   fi
+# }
 
 # ---- Main -----------------------------------------------------------------
 main() {
@@ -199,9 +220,9 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   clean_commit; setup_bakasu; configure; build; collect; clean_commit ;;
+		build)   setup_bakasu; setup_nomount; configure; build; collect ;;
 		collect) collect ;;
-		setup)   setup_bakasu ;;
+		setup)   setup_bakasu; setup_nomount ;; 
 		config)  configure ;;
 		clean)   clean ;;
 		-h|--help|help) usage ;;
