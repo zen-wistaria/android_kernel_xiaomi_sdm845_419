@@ -3,7 +3,7 @@ set -Eeuo pipefail
 trap 'echo "ERROR: script exited at line $LINENO (exit code $?)"' ERR
 
 # ---------------------------------------------------------------------------
-# ReSukiSU + SUSFS kernel builder for Xiaomi Poco F1 (beryllium), sdm845, 4.19
+# BakaSU + SUSFS kernel builder for Xiaomi Poco F1 (beryllium), sdm845, 4.19
 # ---------------------------------------------------------------------------
 
 # ---- Configurable variables -----------------------------------------------
@@ -15,14 +15,14 @@ JOBS="${JOBS:-$(nproc)}"
 KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-zen}"
 KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 
-# ReSukiSU commit to pin (reproducible build). beaaea0 = v4.1.0-1341-gbeaaea0e
-RESUKISU_COMMIT="${RESUKISU_COMMIT:-0b5efe9e0102c43ca5c41174d500f5a7080cd0c7}"
-RESUKISU_REPO="https://github.com/ReSukiSU/ReSukiSU.git"
+# BakaSU commit to pin (reproducible build)
+BAKASU_COMMIT="${BAKASU_COMMIT:-373303c525d05c8b47801305f506ef9124dbd6e6}"
+BAKASU_REPO="https://github.com/Baka-SU/BakaSU.git"
 
-# Backports applied on top of ReSukiSU (committed with a recognizable name)
-KSU_BACKPORT_PATCH="${ROOT_DIR}/KernelSU-backports.patch"
-KSU_BACKPORT_COMMIT="ReSukiSU backports: independent hooks, sus_path app-flag, ksu_init_rc_hook"
-REPO_BUILD_COMMIT="kernelsu: update submodule pointer to ReSukiSU backports"
+# Backports applied on top of BakaSU (committed with a recognizable name)
+# KSU_BACKPORT_PATCH="${ROOT_DIR}/KernelSU-backports.patch"
+KSU_BACKPORT_COMMIT="BakaSU backports: independent hooks, sus_path app-flag, ksu_init_rc_hook"
+REPO_BUILD_COMMIT="kernelsu: update submodule pointer to BakaSU backports"
 
 DEFCONFIG_FRAGMENTS=(
 	"arch/arm64/configs/vendor/sdm845-perf_defconfig"
@@ -49,21 +49,21 @@ commit_exists() {
 	[ -n "$(git -C "$repo" log --oneline --grep="$pattern" -F)" ]
 }
 
-# ---- Setup ReSukiSU submodule at pinned commit + apply backports ----------
-setup_resukisu() {
+# ---- Setup BakaSU submodule at pinned commit + apply backports ----------
+setup_bakasu() {
 	if [[ ! -e "${ROOT_DIR}/KernelSU/.git" ]]; then
-		log "Cloning ReSukiSU"
-		git clone --filter=blob:none "$RESUKISU_REPO" "${ROOT_DIR}/KernelSU"
+		log "Cloning BakaSU"
+		git clone --filter=blob:none "$BAKASU_REPO" "${ROOT_DIR}/KernelSU"
 	fi
 
-	log "Checking out ReSukiSU ${RESUKISU_COMMIT}"
+	log "Checking out BakaSU ${BAKASU_COMMIT}"
 	# Full history is required so KSU_LOCAL_VERSION (rev-list --count) stays
 	# ~4355 -> KSU_VERSION 35055. A shallow checkout would yield a tiny count
 	# and a too-low version code.
 	if [ "$(git -C "${ROOT_DIR}/KernelSU" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
 		git -C "${ROOT_DIR}/KernelSU" fetch --unshallow origin 2>/dev/null || true
 	fi
-	git -C "${ROOT_DIR}/KernelSU" checkout --detach "$RESUKISU_COMMIT"
+	git -C "${ROOT_DIR}/KernelSU" checkout --detach "$BAKASU_COMMIT"
 
 	log "Wiring drivers/kernelsu"
 	ln -sfn ../KernelSU/kernel "${ROOT_DIR}/drivers/kernelsu"
@@ -78,10 +78,9 @@ setup_resukisu() {
 	else
 		git -C "${ROOT_DIR}/KernelSU" checkout -- kernel/ 2>/dev/null || true
 		log "Applying KernelSU backports"
-		# (cd "${ROOT_DIR}/KernelSU" && git apply "${KSU_BACKPORT_PATCH}")
-		(cd "${ROOT_DIR}/KernelSU" && git apply --reject --whitespace=fix "${KSU_BACKPORT_PATCH}")
-		git -C "${ROOT_DIR}/KernelSU" add -A
-		git -C "${ROOT_DIR}/KernelSU" commit -m "$KSU_BACKPORT_COMMIT"
+		# (cd "${ROOT_DIR}/KernelSU" && git apply --reject --whitespace=fix "${KSU_BACKPORT_PATCH}")
+		# git -C "${ROOT_DIR}/KernelSU" add -A
+		# git -C "${ROOT_DIR}/KernelSU" commit -m "$KSU_BACKPORT_COMMIT"
 		log "Committed KernelSU backports"
 	fi
 
@@ -166,7 +165,7 @@ Environment overrides:
   TC=path               Toolchain directory (default: ~/Coding/proton-clang)
   KBUILD_BUILD_USER=user Build user in kernel version string (default: zen)
   KBUILD_BUILD_HOST=host Build host in kernel version string (default: ubuntu)
-  RESUKISU_COMMIT=sha   ReSukiSU revision to check out
+  BAKASU_COMMIT=sha   BakaSU revision to check out
 EOF
 }
 
@@ -177,12 +176,12 @@ clean() {
 
 clean_commit() {
   if [ -d "$ROOT_DIR/KernelSU/.git" ] && [ "$(git -C "$ROOT_DIR/KernelSU" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$KSU_BACKPORT_COMMIT" ]; then
-	log "Resetting ReSukiSU submodule to pinned commit"
+	log "Resetting BakaSU submodule to pinned commit"
   	git -C "$ROOT_DIR/KernelSU" reset --hard HEAD~1
   fi
 
   if [ "$(git -C "$ROOT_DIR" log -1 --pretty=%B 2>/dev/null | head -n1)" = "$REPO_BUILD_COMMIT" ]; then
-	log "Resetting root repo to remove ReSukiSU submodule pointer commit"
+	log "Resetting root repo to remove BakaSU submodule pointer commit"
 	git -C "$ROOT_DIR" reset --mixed HEAD~1
   fi
 }
@@ -195,9 +194,9 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   clean_commit; setup_resukisu; configure; build; collect; clean_commit ;;
+		build)   clean_commit; setup_bakasu; configure; build; collect; clean_commit ;;
 		collect) collect ;;
-		setup)   setup_resukisu ;;
+		setup)   setup_bakasu ;;
 		config)  configure ;;
 		clean)   clean ;;
 		-h|--help|help) usage ;;
