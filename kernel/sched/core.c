@@ -24,6 +24,9 @@
 
 #include "pelt.h"
 #include "walt.h"
+#ifdef CONFIG_SCHED_BORE
+#include <linux/sched/bore.h>
+#endif /* CONFIG_SCHED_BORE */
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/sched.h>
@@ -708,7 +711,11 @@ int tg_nop(struct task_group *tg, void *data)
 
 static void set_load_weight(struct task_struct *p, bool update_load)
 {
+#ifdef CONFIG_SCHED_BORE
+	int prio = effective_prio_bore(p);
+#else /* !CONFIG_SCHED_BORE */
 	int prio = p->static_prio - MAX_RT_PRIO;
+#endif /* CONFIG_SCHED_BORE */
 	struct load_weight *load = &p->se.load;
 
 	/*
@@ -2957,6 +2964,9 @@ static void __sched_fork(unsigned long clone_flags, struct task_struct *p)
 	p->boost_period			= 0;
 #ifdef CONFIG_SCHED_WALT
 	p->low_latency			= 0;
+#endif
+#ifdef CONFIG_SCHED_BORE
+	reset_task_bore(p);
 #endif
 	INIT_LIST_HEAD(&p->se.group_node);
 
@@ -7269,6 +7279,9 @@ void __init sched_init(void)
 
 	wait_bit_init();
 
+#ifdef CONFIG_SCHED_BORE
+	sched_init_bore();
+#endif
 	init_clusters();
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -8093,6 +8106,40 @@ static u64 cpu_uclamp_ls_read_u64(struct cgroup_subsys_state *css,
 	struct task_group *tg = css_tg(css);
 
 	return (u64) tg->latency_sensitive;
+}
+
+/* Wrappers for cpuset exposure */
+int cpu_uclamp_min_show_wrapper(struct seq_file *sf, void *v)
+{
+	return cpu_uclamp_min_show(sf, v);
+}
+int cpu_uclamp_max_show_wrapper(struct seq_file *sf, void *v)
+{
+	return cpu_uclamp_max_show(sf, v);
+}
+
+ssize_t cpu_uclamp_min_write_wrapper(struct kernfs_open_file *of,
+				     char *buf, size_t nbytes,
+				     loff_t off)
+{
+	return cpu_uclamp_min_write(of, buf, nbytes, off);
+}
+ssize_t cpu_uclamp_max_write_wrapper(struct kernfs_open_file *of,
+				     char *buf, size_t nbytes,
+				     loff_t off)
+{
+	return cpu_uclamp_max_write(of, buf, nbytes, off);
+}
+
+int cpu_uclamp_ls_write_u64_wrapper(struct cgroup_subsys_state *css,
+				    struct cftype *cftype, u64 ls)
+{
+	return cpu_uclamp_ls_write_u64(css, cftype, ls);
+}
+u64 cpu_uclamp_ls_read_u64_wrapper(struct cgroup_subsys_state *css,
+				   struct cftype *cft)
+{
+	return cpu_uclamp_ls_read_u64(css, cft);
 }
 #endif /* CONFIG_UCLAMP_TASK_GROUP */
 
