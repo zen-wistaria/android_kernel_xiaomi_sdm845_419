@@ -19,6 +19,7 @@
 
 #include <linux/oom.h>
 #include <linux/mm.h>
+#include <linux/nmi.h>
 #include <linux/err.h>
 #include <linux/gfp.h>
 #include <linux/sched.h>
@@ -583,11 +584,15 @@ void dump_tasks(struct mem_cgroup *memcg, const nodemask_t *nodemask)
 {
 	struct task_struct *p;
 	struct task_struct *task;
+	int i = 0;
 
 	pr_info("Tasks state (memory values in pages):\n");
 	pr_info("[  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name\n");
 	rcu_read_lock();
 	for_each_process(p) {
+		/* Avoid potential softlockup warning */
+		if ((++i & 1023) == 0)
+			touch_softlockup_watchdog();
 		if (oom_unkillable_task(p, memcg, nodemask))
 			continue;
 
