@@ -26,9 +26,9 @@ ui_print() {
 }
 ui_printfile() {
   local line losrpad;
-  $BOOTMODE || [ -e /twres ] || losrpad='| '; # work around LOS Recovery eating leading whitespace
+  $BOOTMODE || [ -e /twres ]; # work around LOS Recovery eating leading whitespace
   while IFS='' read -r line || [[ -n "$line" ]]; do
-    ui_print "$losrpad$line";
+    ui_print "$line";
   done < $1;
 }
 show_progress() { echo "progress $1 $2" >> /proc/self/fd/$OUTFD; }
@@ -299,7 +299,7 @@ do_devicecheck() {
   for testname in $(grep '^device.name.*=' anykernel.sh | cut -d= -f2-); do
     for devicename in $device $product $vendordevice $vendorproduct; do
       if [ "$devicename" == "$testname" ]; then
-        ui_print " -> Device Check: $testname [OK]";
+        ui_print " >>>>>> Device Check: $testname [OK]";
         match=1;
         break 2;
       fi;
@@ -339,7 +339,7 @@ do_versioncheck() {
     done;
   fi;
   if [ "$supported" ]; then
-    ui_print " -> Android Version Check: Android $android_ver [OK]";
+    ui_print " >>>>>> Android Version Check: Android $android_ver [OK]";
   else
     abort " ERROR: Unsupported Android version ($android_ver)! Aborting...";
   fi;
@@ -361,7 +361,7 @@ do_levelcheck() {
     hi_lvl=9999-99;
   fi;
   if echo -e "$hi_lvl\n$lo_lvl\n$parsed_lvl" | sort -g | grep -n "$parsed_lvl" | grep -q '^2:'; then
-    ui_print " -> Security Patch Check: $android_lvl [OK]";
+    ui_print " >>>>>> Security Patch Check: $android_lvl [OK]";
   else
     abort " ERROR: Unsupported Android security patch level ($android_lvl)! Aborting...";
   fi;
@@ -383,7 +383,7 @@ do_vendorlevelcheck() {
     hi_lvl=9999-99;
   fi;
   if echo -e "$hi_lvl\n$lo_lvl\n$parsed_lvl" | sort -g | grep -n "$parsed_lvl" | grep -q '^2:'; then
-    ui_print " -> Vendor Patch Check: $vendor_lvl [OK]";
+    ui_print " >>>>>> Vendor Patch Check: $vendor_lvl [OK]";
   else
     abort " ERROR: Unsupported Vendor security patch level ($vendor_lvl)! Aborting...";
   fi;
@@ -540,8 +540,8 @@ if [ -f banner ]; then
 fi;
 
 KERNEL_STRING="$(file_getprop anykernel.sh kernel.string)";
-ui_print "  Kernel: $KERNEL_STRING" \
-         "=============================================" \
+ui_print " Kernel: $KERNEL_STRING" \
+         "***************************************************" \
          " [*] Initializing environment...";
 
 setup_env;
@@ -551,7 +551,7 @@ do_devicecheck;
 do_versioncheck;
 do_levelcheck;
 do_vendorlevelcheck;
-ui_print "=============================================" \
+ui_print "***************************************************" \
          " [*] Installing kernel...";
 
 ash anykernel.sh;
@@ -568,8 +568,7 @@ if [ "$(file_getprop anykernel.sh do.cleanup)" == 1 ]; then
   cleanup;
 fi;
 
-ui_print "=============================================" \
-         " [+][+][+] Installation Completed! [+][+][+]" \
-         "=============================================";
+ui_print " [*] Installation Completed!" \
+         "***************************************************";
 export PATH="$OLD_PATH";
 unset OLD_PATH OUTFD ZIPFILE;

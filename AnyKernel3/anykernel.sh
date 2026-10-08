@@ -4,7 +4,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=ResukiSU-Kernel for Poco F1 (beryllium)
+kernel.string=BakaSU for Poco F1 (beryllium)
 do.devicecheck=1
 do.modules=0
 do.systemless=1
@@ -38,10 +38,10 @@ PATCH_VBMETA_FLAG=auto;
 . tools/ak3-core.sh;
 
 # boot install
-ui_print " -> Unpacking boot image...";
+ui_print " >>>>>> Unpacking boot image...";
 dump_boot; # use split_boot to skip ramdisk unpack, e.g. for devices with init_boot ramdisk
 
-ui_print " -> Repacking and writing new boot image...";
+ui_print " >>>>>> Repacking and writing new boot image...";
 write_boot; # use flash_boot to skip ramdisk repack, e.g. for devices with init_boot ramdisk
 ## end boot install
 
