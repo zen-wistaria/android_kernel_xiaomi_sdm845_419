@@ -25,6 +25,8 @@ static void proc_command_line_init(void) {
 
 	memcpy(offset_addr, INITRAMFS_STR_REPLACE, INITRAMFS_STR_LEN);
 }
+#endif
+
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
 extern struct static_key_false susfs_is_fake_cmdline_or_bootconfig_buffer_set;
 extern void susfs_spoof_cmdline_or_bootconfig(struct seq_file *m);

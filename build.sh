@@ -100,8 +100,13 @@ configure() {
 	export KCONFIG_NONINTERACTIVE=1
 	log "Merging defconfig"
 	mkdir -p "$OUT_DIR"
-	scripts/kconfig/merge_config.sh -O "$OUT_DIR" "${DEFCONFIG_FRAGMENTS[@]}" < /dev/null || true
-	make -C "$ROOT_DIR" O="$OUT_DIR" ARCH=arm64 olddefconfig < /dev/null
+	scripts/kconfig/merge_config.sh -m -O "$OUT_DIR" "${DEFCONFIG_FRAGMENTS[@]}" < /dev/null || true
+	make -C "$ROOT_DIR" O="$OUT_DIR" ARCH=arm64 \
+		CC="$TOOLCHAIN_DIR/bin/clang" \
+		CLANG_TRIPLE=aarch64-linux-gnu- \
+		CROSS_COMPILE="$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-" \
+		LLVM_IAS=1 \
+		olddefconfig < /dev/null
 
 	# Vendor techpack drivers are not clang-clean; relax -Werror
 	log "Disabling -Werror in techpack"

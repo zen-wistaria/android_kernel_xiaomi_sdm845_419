@@ -20,6 +20,7 @@
 #if defined(CONFIG_KSU_SUSFS_SUS_KSTAT) || defined(CONFIG_KSU_SUSFS)
 #include <linux/susfs_def.h>
 #endif
+#include "internal.h"
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
