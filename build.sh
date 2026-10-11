@@ -17,11 +17,11 @@ KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 
 # BakaSU commit to pin (reproducible build)
 BAKASU_REPO="https://github.com/Baka-SU/BakaSU.git"
-BAKASU_COMMIT="${BAKASU_COMMIT:-373303c525d05c8b47801305f506ef9124dbd6e6}"
+BAKASU_COMMIT="${BAKASU_COMMIT:-5b76b884c75f729a220bb317aa4a4fc78f0e0e9c}"
 
 # NoMount commit to pin (reproducible build)
 NOMOUNT_REPO="https://github.com/maxsteeel/nomount.git"
-NOMOUNT_COMMIT="${NOMOUNT_COMMIT:-7e7342cd48841cfedd00be2fd20a0311f69c48c5}"
+NOMOUNT_COMMIT="${NOMOUNT_COMMIT:-1ded61dc908c511072162fa0bee44e6ccdb7b4c7}"
 
 # Backports applied on top of BakaSU (committed with a recognizable name)
 # KSU_BACKPORT_PATCH="${ROOT_DIR}/KernelSU-backports.patch"
