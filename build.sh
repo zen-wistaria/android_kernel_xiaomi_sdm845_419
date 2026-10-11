@@ -104,6 +104,7 @@ setup_nomount() {
 	fi
 	
 	log "Checking out NoMount ${NOMOUNT_COMMIT}"
+	git -C "${ROOT_DIR}/NoMount" fetch --unshallow origin 2>/dev/null || true
 	git -C "${ROOT_DIR}/NoMount" checkout --detach "$NOMOUNT_COMMIT"
 
     log "Wiring NoMount"
