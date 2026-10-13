@@ -80,6 +80,21 @@ build() {
 	printf 'Image: %s\n' "$OUT_DIR/arch/arm64/boot/Image.gz-dtb"
 }
 
+anykernel() {
+	log "Creating AnyKernel zip"
+	IMAGE=$DIST_DIR/Image.gz-dtb
+	ANYKERNEL=$ROOT_DIR/AnyKernel3
+	NAME=kernel-4.19-PocoF1-$(date +%Y%m%d-%H%M)
+	
+	if [ -f "$IMAGE" ]; then
+		cp -r $IMAGE $ANYKERNEL/Image.gz-dtb
+		zip -r9 $DIST_DIR/$NAME.zip $ANYKERNEL/* -x "*.git*" -x "LICENCE" -x "README.md" > /dev/null
+		log "AnyKernel zip created: $DIST_DIR/$NAME.zip"
+	else
+		die "Image.gz-dtb missing"
+	fi
+}
+
 # ---- Collect artifacts -----------------------------------------------------
 collect() {
 	local boot="$OUT_DIR/arch/arm64/boot"
@@ -107,7 +122,7 @@ EOF
 
 clean() {
   log "Removing generated build output"
-  rm -rf "$OUT_DIR"
+  rm -rf "$OUT_DIR" "$DIST_DIR"
 }
 
 # ---- Main -----------------------------------------------------------------
@@ -118,9 +133,10 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   configure; build; collect ;;
+		build)   configure; build; collect; anykernel ;;
 		collect) collect ;;
 		config)  configure ;;
+		anykernel) anykernel ;;
 		clean)   clean ;;
 		-h|--help|help) usage ;;
 		*) usage >&2; exit 2 ;;
