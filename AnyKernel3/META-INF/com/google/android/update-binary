@@ -540,7 +540,8 @@ if [ -f banner ]; then
 fi;
 
 KERNEL_STRING="$(file_getprop anykernel.sh kernel.string)";
-ui_print " Kernel: $KERNEL_STRING" \
+ui_print "***************************************************" \
+         " Kernel: $KERNEL_STRING" \
          "***************************************************" \
          " Initializing environment...";
 
