@@ -14,6 +14,11 @@ TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-${HOME}/Coding/proton-clang}"
 JOBS="${JOBS:-$(nproc)}"
 KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-zen}"
 KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
+
+# BakaSU commit to pin (reproducible build)
+BAKASU_COMMIT="${BAKASU_COMMIT:-5b76b884c75f729a220bb317aa4a4fc78f0e0e9c}"
+BAKASU_REPO="https://github.com/Baka-SU/BakaSU.git"
+
 DEFCONFIG_FRAGMENTS=(
 	"arch/arm64/configs/vendor/sdm845-perf_defconfig"
 	"arch/arm64/configs/vendor/xiaomi/sdm845-common.config"
@@ -27,6 +32,30 @@ TC="$HOME/Coding/proton-clang"
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
+
+# ---- Setup BakaSU submodule at pinned commit + apply backports ----------
+setup_bakasu() {
+	if [[ ! -e "${ROOT_DIR}/KernelSU/.git" ]]; then
+		log "Cloning BakaSU"
+		git clone --filter=blob:none "$BAKASU_REPO" "${ROOT_DIR}/KernelSU"
+	fi
+
+	log "Checking out BakaSU ${BAKASU_COMMIT}"
+	# Full history is required so KSU_LOCAL_VERSION (rev-list --count) stays
+	# ~4355 -> KSU_VERSION 35055. A shallow checkout would yield a tiny count
+	# and a too-low version code.
+	if [ "$(git -C "${ROOT_DIR}/KernelSU" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+		git -C "${ROOT_DIR}/KernelSU" fetch --unshallow origin 2>/dev/null || true
+	fi
+	git -C "${ROOT_DIR}/KernelSU" checkout --detach "$BAKASU_COMMIT"
+
+	log "Wiring drivers/kernelsu"
+	ln -sfn ../KernelSU/kernel "${ROOT_DIR}/drivers/kernelsu"
+	grep -qE 'obj-\$\(CONFIG_KSU\)\s*\+= kernelsu/' "${ROOT_DIR}/drivers/Makefile" ||
+		printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "${ROOT_DIR}/drivers/Makefile"
+	grep -q 'source "drivers/kernelsu/Kconfig"' "${ROOT_DIR}/drivers/Kconfig" ||
+		sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' "${ROOT_DIR}/drivers/Kconfig"
+}
 
 # ---- Configure kernel (defconfig) ------------------------------------
 # Use KCONFIG_NONINTERACTIVE + default answers so kconfig never blocks on
@@ -143,9 +172,10 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   configure; build; collect; anykernel ;;
+		build)   setup_bakasu; configure; build; collect; anykernel ;;
 		collect) collect ;;
 		config)  configure ;;
+		setup)   setup_bakasu ;;
 		anykernel) anykernel ;;
 		clean)   clean ;;
 		-h|--help|help) usage ;;
