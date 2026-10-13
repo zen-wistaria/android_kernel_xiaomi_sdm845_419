@@ -132,18 +132,28 @@ build() {
 }
 
 anykernel() {
-	log "Creating AnyKernel zip"
-	IMAGE=$DIST_DIR/Image.gz-dtb
-	ANYKERNEL=$ROOT_DIR/AnyKernel3
-	NAME=kernel-4.19-PocoF1-$(date +%Y%m%d-%H%M)
-	
-	if [ -f "$IMAGE" ]; then
-		cp -r $IMAGE $ANYKERNEL/Image.gz-dtb
-		zip -r9 $DIST_DIR/$NAME.zip $ANYKERNEL/* -x "*.git*" -x "LICENCE" -x "README.md" > /dev/null
-		log "AnyKernel zip created: $DIST_DIR/$NAME.zip"
-	else
-		die "Image.gz-dtb missing"
-	fi
+    log "Creating AnyKernel zip"
+
+    IMAGE="$DIST_DIR/Image.gz-dtb"
+    ANYKERNEL="$ROOT_DIR/AnyKernel3"
+    NAME="kernel-4.19-PocoF1-$(date +%Y%m%d-%H%M)"
+
+    if [ -f "$IMAGE" ]; then
+        cp "$IMAGE" "$ANYKERNEL/Image.gz-dtb"
+
+        (
+            cd "$ANYKERNEL" || exit 1
+
+            zip -r9 "$DIST_DIR/$NAME.zip" . \
+                -x "*.git*" \
+                -x "LICENCE" \
+                -x "README.md"
+        ) > /dev/null || die "Failed to create AnyKernel zip"
+
+        log "AnyKernel zip created: $DIST_DIR/$NAME.zip"
+    else
+        die "Image.gz-dtb missing"
+    fi
 }
 
 # ---- Collect artifacts -----------------------------------------------------
