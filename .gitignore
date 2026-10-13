@@ -122,6 +122,7 @@ ID
 #
 # Build output
 out/
+dist/
 
 extra_certificates
 signing_key.pem
