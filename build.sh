@@ -14,6 +14,11 @@ TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-${HOME}/Coding/proton-clang}"
 JOBS="${JOBS:-$(nproc)}"
 KBUILD_BUILD_USER="${KBUILD_BUILD_USER:-zen}"
 KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
+
+# NoMount commit to pin (reproducible build)
+NOMOUNT_REPO="https://github.com/maxsteeel/nomount.git"
+NOMOUNT_COMMIT="${NOMOUNT_COMMIT:-1ded61dc908c511072162fa0bee44e6ccdb7b4c7}"
+
 DEFCONFIG_FRAGMENTS=(
 	"arch/arm64/configs/vendor/sdm845-perf_defconfig"
 	"arch/arm64/configs/vendor/xiaomi/sdm845-common.config"
@@ -28,7 +33,26 @@ log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 
-# ---- Configure kernel (defconfig) ------------------------------------
+# ---- Setup NoMount submodule at pinned commit ---------------------------
+setup_nomount() {
+	if [[ ! -e "${ROOT_DIR}/NoMount/.git" ]]; then
+		log "Cloning NoMount"
+		git clone --filter=blob:none "$NOMOUNT_REPO" "${ROOT_DIR}/NoMount"
+	fi
+	
+	log "Checking out NoMount ${NOMOUNT_COMMIT}"
+	git -C "${ROOT_DIR}/NoMount" fetch --unshallow origin 2>/dev/null || true
+	git -C "${ROOT_DIR}/NoMount" checkout --detach "$NOMOUNT_COMMIT"
+
+    log "Wiring NoMount"
+    ln -sfn ../NoMount/kernel/src "${ROOT_DIR}/fs/nomount"
+    grep -qE 'obj-\$\(CONFIG_NOMOUNT\)\s*\+= nomount/' "${ROOT_DIR}/fs/Makefile" ||
+        printf '\nobj-$(CONFIG_NOMOUNT) += nomount/\n' >> "${ROOT_DIR}/fs/Makefile"
+    grep -q 'source "fs/nomount/Kconfig"' "${ROOT_DIR}/fs/Kconfig" ||
+        sed -i '/^endmenu/i source "fs/nomount/Kconfig"' "${ROOT_DIR}/fs/Kconfig"
+}
+
+# ---- Configure kernel (defconfig + KSU) ------------------------------------
 # Use KCONFIG_NONINTERACTIVE + default answers so kconfig never blocks on
 # (NEW) options during olddefconfig/syncconfig.
 configure() {
@@ -143,9 +167,10 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   configure; build; collect; anykernel ;;
+		build)   setup_nomount; configure; build; collect; anykernel ;;
 		collect) collect ;;
 		config)  configure ;;
+		setup)   setup_nomount ;;
 		anykernel) anykernel ;;
 		clean)   clean ;;
 		-h|--help|help) usage ;;
