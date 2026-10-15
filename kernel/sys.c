@@ -635,7 +635,7 @@ long __sys_setresuid(uid_t ruid, uid_t euid, uid_t suid)
 	kuid_t kruid, keuid, ksuid;
 
 #ifdef CONFIG_KSU_SUSFS
-       (void)ksu_handle_setresuid(ruid, euid, suid);
+	(void)ksu_handle_setresuid(ruid, euid, suid);
 #endif
 
 	kruid = make_kuid(ns, ruid);
