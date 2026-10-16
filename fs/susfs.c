@@ -52,6 +52,8 @@ void susfs_add_sus_path(void __user **user_info) {
 	struct path path;
 	struct inode *inode = NULL;
 	struct fuse_inode *fi = NULL;
+	struct st_susfs_sus_path_list *new_list = NULL, *cursor = NULL;
+	bool found = false;
 
 	if (copy_from_user(&info, (struct st_susfs_sus_path __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
@@ -82,13 +84,37 @@ void susfs_add_sus_path(void __user **user_info) {
 		set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
 		SUSFS_LOGI("flagged AS_FLAGS_SUS_PATH on pathname: '%s', fi->nodeid: %llu, fi->inode.i_ino: %lu, fi->inode.i_mapping->flags: 0x%lx\n", 
 					info.target_pathname, fi->nodeid, fi->inode.i_ino, fi->inode.i_mapping->flags);
-		info.err = 0;
-		goto out_path_put_path;
+	} else {
+		set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
+		SUSFS_LOGI("flagged AS_FLAGS_SUS_PATH on pathname: '%s', ino: '%lu', inode->i_mapping->flags: 0x%lx\n",
+					info.target_pathname, inode->i_ino, inode->i_mapping->flags);
 	}
 
-	set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
-	SUSFS_LOGI("flagged AS_FLAGS_SUS_PATH on pathname: '%s', ino: '%lu', inode->i_mapping->flags: 0x%lx\n",
-				info.target_pathname, inode->i_ino, inode->i_mapping->flags);
+	/* Automatically register in LH_SUS_PATH_LOOP and pin the path in cache
+	 * so that the inode is never evicted by memory pressure.
+	 */
+	mutex_lock(&susfs_mutex_lock_sus_path);
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_LOOP, list) {
+		if (!strcmp(cursor->target_pathname, info.target_pathname)) {
+			found = true;
+			break;
+		}
+	}
+	if (!found) {
+		new_list = kzalloc(sizeof(struct st_susfs_sus_path_list), GFP_KERNEL);
+		if (new_list) {
+			strscpy(new_list->info.target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+			strscpy(new_list->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+			INIT_LIST_HEAD(&new_list->list);
+			path_get(&path);
+			new_list->pinned_path = path;
+			new_list->is_pinned = true;
+			list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_LOOP);
+			SUSFS_LOGI("target_pathname: '%s', automatically added to LH_SUS_PATH_LOOP and pinned\n", new_list->target_pathname);
+		}
+	}
+	mutex_unlock(&susfs_mutex_lock_sus_path);
+
 	info.err = 0;
 out_path_put_path:
 	path_put(&path);
@@ -100,8 +126,9 @@ out_copy_to_user:
 }
 
 void susfs_add_sus_path_loop(void __user **user_info) {
-	struct st_susfs_sus_path_list *new_list = NULL;
+	struct st_susfs_sus_path_list *new_list = NULL, *cursor = NULL;
 	struct st_susfs_sus_path info = {0};
+	struct path path;
 
 	if (copy_from_user(&info, (struct st_susfs_sus_path __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
@@ -114,15 +141,30 @@ void susfs_add_sus_path_loop(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
+	mutex_lock(&susfs_mutex_lock_sus_path);
+	list_for_each_entry_rcu(cursor, &LH_SUS_PATH_LOOP, list) {
+		if (!strcmp(cursor->target_pathname, info.target_pathname)) {
+			mutex_unlock(&susfs_mutex_lock_sus_path);
+			info.err = 0;
+			goto out_copy_to_user;
+		}
+	}
+
 	new_list = kzalloc(sizeof(struct st_susfs_sus_path_list), GFP_KERNEL);
 	if (!new_list) {
+		mutex_unlock(&susfs_mutex_lock_sus_path);
 		info.err = -ENOMEM;
 		goto out_copy_to_user;
 	}
 	strscpy(new_list->info.target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
 	strscpy(new_list->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
 	INIT_LIST_HEAD(&new_list->list);
-	mutex_lock(&susfs_mutex_lock_sus_path);
+	if (!kern_path(new_list->target_pathname, 0, &path)) {
+		path_get(&path);
+		new_list->pinned_path = path;
+		new_list->is_pinned = true;
+		path_put(&path);
+	}
 	list_add_tail_rcu(&new_list->list, &LH_SUS_PATH_LOOP);
 	mutex_unlock(&susfs_mutex_lock_sus_path);
 	SUSFS_LOGI("target_pathname: '%s', is successfully added to LH_SUS_PATH_LOOP\n", new_list->target_pathname);
@@ -166,6 +208,11 @@ static void susfs_run_sus_path_loop(void) {
 				set_bit(AS_FLAGS_SUS_PATH, &inode->i_mapping->flags);
 				SUSFS_LOGI("re-flag AS_FLAGS_SUS_PATH on path '%s', inode->i_ino: '%lu', inode->i_mapping->flags: 0x%lx\n",
 						cursor->target_pathname, inode->i_ino, inode->i_mapping->flags);
+			}
+			if (!cursor->is_pinned) {
+				path_get(&path);
+				cursor->pinned_path = path;
+				cursor->is_pinned = true;
 			}
 			path_put(&path);
 		}
@@ -344,6 +391,12 @@ static int susfs_mark_inode_sus_kstat(char *target_pathname, struct st_susfs_sus
 	SUSFS_LOGI("marked AS_FLAGS_SUS_KSTAT on pathname: '%s', is_fuse: %d, inode->i_sb->s_dev: %u,  inode->i_ino: %lu, inode->i_mapping->flags: 0x%lx, spoofed_mnt_id: '%d'\n",
 				target_pathname, new_entry->is_fuse, inode->i_sb->s_dev, inode->i_ino, inode->i_mapping->flags, new_entry->spoofed_mnt_id);
 
+	if (!new_entry->is_pinned) {
+		path_get(&path);
+		new_entry->pinned_path = path;
+		new_entry->is_pinned = true;
+	}
+
 out_path_put_path:
 	path_put(&path);
 	return err;
@@ -386,6 +439,8 @@ void susfs_add_sus_kstat(void __user **user_info) {
 			info.err = susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry, false);
 			if (info.err) {
 				mutex_unlock(&susfs_mutex_lock_sus_kstat);
+				if (new_entry->is_pinned)
+					path_put(&new_entry->pinned_path);
 				kfree(new_entry);
 				goto out_copy_to_user;
 			}
@@ -414,6 +469,8 @@ void susfs_add_sus_kstat(void __user **user_info) {
 			hash_add_rcu(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
 			mutex_unlock(&susfs_mutex_lock_sus_kstat);
 			synchronize_rcu();
+			if (tmp_entry->is_pinned)
+				path_put(&tmp_entry->pinned_path);
 			kfree(tmp_entry);
 			info.err = 0;
 			goto out_copy_to_user;
@@ -424,6 +481,8 @@ void susfs_add_sus_kstat(void __user **user_info) {
 	info.err = susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry, false);
 	if (info.err) {
 		mutex_unlock(&susfs_mutex_lock_sus_kstat);
+		if (new_entry->is_pinned)
+			path_put(&new_entry->pinned_path);
 		kfree(new_entry);
 		goto out_copy_to_user;
 	}
@@ -492,6 +551,8 @@ void susfs_update_sus_kstat(void __user **user_info) {
 			info.err = susfs_mark_inode_sus_kstat(new_entry->info.target_pathname, new_entry, true);
 			if (info.err) {
 				mutex_unlock(&susfs_mutex_lock_sus_kstat);
+				if (new_entry->is_pinned)
+					path_put(&new_entry->pinned_path);
 				kfree(new_entry);
 				goto out_copy_to_user;
 			}
@@ -501,12 +562,16 @@ void susfs_update_sus_kstat(void __user **user_info) {
 			hash_add_rcu(SUS_KSTAT_HLIST, &new_entry->node, info.target_ino);
 			mutex_unlock(&susfs_mutex_lock_sus_kstat);
 			synchronize_rcu();
+			if (tmp_entry->is_pinned)
+				path_put(&tmp_entry->pinned_path);
 			kfree(tmp_entry);
 			info.err = 0;
 			goto out_copy_to_user;
 		}
 	}
 	mutex_unlock(&susfs_mutex_lock_sus_kstat);
+	if (new_entry->is_pinned)
+		path_put(&new_entry->pinned_path);
 	kfree(new_entry);
 	info.err = -ENOENT;
 
@@ -543,7 +608,7 @@ __attribute__((hot)) bool susfs_is_inode_sus_kstat(struct inode *inode, bool *ou
 	return false;
 }
 
-void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat, u32 result_mask)
+void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat)
 {
 	struct st_susfs_sus_kstat_hlist *entry = NULL;
 	struct fuse_inode *fi = NULL;
@@ -551,25 +616,24 @@ void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *s
 	dev_t target_dev = 0;
 	bool is_fuse = false;
 
-	switch (result_mask) {
-		case STATX_SUS_KSTAT:
-			target_ino = inode->i_ino;
-			target_dev = inode->i_sb->s_dev;
-			goto out_spoof_kstat;
-		case STATX_SUS_KSTAT_FUSE:
-			fi = get_fuse_inode(inode);
-			target_ino = fi->inode.i_ino;
-			target_dev = fi->inode.i_sb->s_dev;
-			is_fuse = true;
-			goto out_spoof_kstat;
-		default:
-			return;
+	if (!susfs_is_inode_sus_kstat(inode, &is_fuse))
+		return;
+
+	if (is_fuse) {
+		fi = get_fuse_inode(inode);
+		target_ino = fi->inode.i_ino;
+		target_dev = fi->inode.i_sb->s_dev;
+		goto out_spoof_kstat;
 	}
+
+	target_ino = inode->i_ino;
+	target_dev = inode->i_sb->s_dev;
 
 out_spoof_kstat:
 	rcu_read_lock();
 	hash_for_each_possible_rcu(SUS_KSTAT_HLIST, entry, node, target_ino) {
-		if (entry->target_dev == target_dev &&
+		if (entry->target_ino == target_ino &&
+			entry->target_dev == target_dev &&
 			entry->is_fuse == is_fuse)
 		{
 			SUSFS_LOGI("spoofing kstat for vfs_getattr_nosec, target_ino: %lu, target_dev: %u\n",
@@ -615,21 +679,14 @@ void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, uns
 	dev_t target_dev = 0;
 	bool is_fuse = false;
 
-	if (inode->i_sb->s_magic == FUSE_SUPER_MAGIC) {
+	if (!susfs_is_inode_sus_kstat(inode, &is_fuse))
+		return;
+
+	if (is_fuse) {
 		fi = get_fuse_inode(inode);
-		if (!fi || !fi->inode.i_mapping) {
-			SUSFS_LOGE("fi || fi->inode.i_mapping is NULL\n");
-			return;
-		}
 		target_ino = fi->inode.i_ino;
 		target_dev = fi->inode.i_sb->s_dev;
-		is_fuse = true;
 		goto out_spoof_kstat;
-	}
-	
-	if (!inode->i_mapping) {
-		SUSFS_LOGE("inode->i_mapping is NULL\n");
-		return;
 	}
 
 	target_ino = inode->i_ino;
@@ -638,7 +695,8 @@ void susfs_sus_kstat_spoof_show_map_vma(struct inode *inode, dev_t *out_dev, uns
 out_spoof_kstat:
 	rcu_read_lock();
 	hash_for_each_possible_rcu(SUS_KSTAT_HLIST, entry, node, target_ino) {
-		if (entry->target_dev == target_dev &&
+		if (entry->target_ino == target_ino &&
+			entry->target_dev == target_dev &&
 			entry->is_fuse == is_fuse)
 		{
 			SUSFS_LOGI("spoofing kstat for show_map_vma, target_ino: %lu, target_dev: %u\n", target_ino, target_dev);

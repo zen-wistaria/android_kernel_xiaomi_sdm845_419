@@ -455,7 +455,6 @@ static void input_handle_event(struct input_dev *dev,
  * to 'seed' initial state of a switch or initial position of absolute
  * axis, etc.
  */
-
 void input_event(struct input_dev *dev,
 		 unsigned int type, unsigned int code, int value)
 {

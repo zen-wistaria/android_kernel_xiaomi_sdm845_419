@@ -47,6 +47,8 @@ struct st_susfs_sus_path_list {
 	struct list_head                        list;
 	struct st_susfs_sus_path                info;
 	char                                    target_pathname[SUSFS_MAX_LEN_PATHNAME];
+	struct path                             pinned_path;
+	bool                                    is_pinned;
 };
 #endif
 
@@ -101,6 +103,8 @@ struct st_susfs_sus_kstat_hlist {
 	int                                     spoofed_mnt_id;
 	bool                                    is_fuse;
 	struct st_susfs_sus_kstat               info;
+	struct path                             pinned_path;
+	bool                                    is_pinned;
 };
 #endif
 
@@ -201,6 +205,7 @@ void susfs_set_hide_sus_mnts_for_non_su_procs(void __user **user_info);
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 void susfs_add_sus_kstat(void __user **user_info);
 void susfs_update_sus_kstat(void __user **user_info);
+void susfs_sus_kstat_spoof_generic_fillattr(struct inode *inode, struct kstat *stat);
 #endif
 
 /* spoof_uname */
