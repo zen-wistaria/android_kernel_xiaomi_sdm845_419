@@ -17,7 +17,7 @@ KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 
 # NoMount commit to pin (reproducible build)
 NOMOUNT_REPO="https://github.com/maxsteeel/nomount.git"
-NOMOUNT_COMMIT="${NOMOUNT_COMMIT:-1ded61dc908c511072162fa0bee44e6ccdb7b4c7}"
+NOMOUNT_COMMIT="${NOMOUNT_COMMIT:-bf1847f98fed382369c43bfd652cd93774b9b8e3}"
 
 DEFCONFIG_FRAGMENTS=(
 	"arch/arm64/configs/vendor/sdm845-perf_defconfig"
