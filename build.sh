@@ -19,6 +19,10 @@ KBUILD_BUILD_HOST="${KBUILD_BUILD_HOST:-linux}"
 NOMOUNT_REPO="https://github.com/maxsteeel/nomount.git"
 NOMOUNT_COMMIT="${NOMOUNT_COMMIT:-bf1847f98fed382369c43bfd652cd93774b9b8e3}"
 
+# BakaSU commit to pin (reproducible build)
+BAKASU_COMMIT="${BAKASU_COMMIT:-d5e9e025b8b49155f8014684d64c91742b465f65}"
+BAKASU_REPO="https://github.com/Baka-SU/BakaSU.git"
+
 DEFCONFIG_FRAGMENTS=(
 	"arch/arm64/configs/vendor/sdm845-perf_defconfig"
 	"arch/arm64/configs/vendor/xiaomi/sdm845-common.config"
@@ -52,7 +56,31 @@ setup_nomount() {
         sed -i '/^endmenu/i source "fs/nomount/Kconfig"' "${ROOT_DIR}/fs/Kconfig"
 }
 
-# ---- Configure kernel (defconfig + KSU) ------------------------------------
+# ---- Setup BakaSU submodule at pinned commit + apply backports ----------
+setup_bakasu() {
+	if [[ ! -e "${ROOT_DIR}/KernelSU/.git" ]]; then
+		log "Cloning BakaSU"
+		git clone --filter=blob:none "$BAKASU_REPO" "${ROOT_DIR}/KernelSU"
+	fi
+
+	log "Checking out BakaSU ${BAKASU_COMMIT}"
+	# Full history is required so KSU_LOCAL_VERSION (rev-list --count) stays
+	# ~4355 -> KSU_VERSION 35055. A shallow checkout would yield a tiny count
+	# and a too-low version code.
+	if [ "$(git -C "${ROOT_DIR}/KernelSU" rev-parse --is-shallow-repository 2>/dev/null)" = "true" ]; then
+		git -C "${ROOT_DIR}/KernelSU" fetch --unshallow origin 2>/dev/null || true
+	fi
+	git -C "${ROOT_DIR}/KernelSU" checkout --detach "$BAKASU_COMMIT"
+
+	log "Wiring drivers/kernelsu"
+	ln -sfn ../KernelSU/kernel "${ROOT_DIR}/drivers/kernelsu"
+	grep -qE 'obj-\$\(CONFIG_KSU\)\s*\+= kernelsu/' "${ROOT_DIR}/drivers/Makefile" ||
+		printf '\nobj-$(CONFIG_KSU) += kernelsu/\n' >> "${ROOT_DIR}/drivers/Makefile"
+	grep -q 'source "drivers/kernelsu/Kconfig"' "${ROOT_DIR}/drivers/Kconfig" ||
+		sed -i '/^endmenu/i source "drivers/kernelsu/Kconfig"' "${ROOT_DIR}/drivers/Kconfig"
+}
+
+# ---- Configure kernel (defconfig) ------------------------------------
 # Use KCONFIG_NONINTERACTIVE + default answers so kconfig never blocks on
 # (NEW) options during olddefconfig/syncconfig.
 configure() {
@@ -167,10 +195,10 @@ main() {
 	for c in git make sed grep nproc; do need "$c"; done
 
 	case "${1:-build}" in
-		build)   setup_nomount; configure; build; collect; anykernel ;;
+		build)   setup_nomount; setup_bakasu; configure; build; collect; anykernel ;;
 		collect) collect ;;
 		config)  configure ;;
-		setup)   setup_nomount ;;
+		setup)   setup_nomount; setup_bakasu ;;
 		anykernel) anykernel ;;
 		clean)   clean ;;
 		-h|--help|help) usage ;;
